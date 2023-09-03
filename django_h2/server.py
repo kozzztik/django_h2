@@ -38,6 +38,6 @@ class Server:
             await protocol.send_response(stream_id, response)
             signals.post_request.send(request, response=response)
         except Exception as e:
-            signals.request_exception(request, exc=e)
+            signals.request_exception.send(request, exc=e)
         finally:
             protocol.end_stream(stream_id)

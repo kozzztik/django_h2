@@ -44,7 +44,7 @@ class H2Worker(Worker):
         try:
             self.server = Server(
                 self.loop,
-                serve_static=False,
+                serve_static=True,  # TODO tmp
                 max_workers=self.cfg.threads,
                 root_path=script_name or "",
             )
@@ -63,14 +63,14 @@ class H2Worker(Worker):
         context = configure_ssl_context(context)
         return context
 
-    def pre_request(self, request, **_):
-        self.cfg.pre_request(self, request)
+    def pre_request(self, sender: H2Request, **_):
+        self.cfg.pre_request(self, sender)
 
-    def post_request(self, request: H2Request, response, **_):
-        request_time = datetime.now() - request.start_time
-        self.log.access(response, request, request.META, request_time)
+    def post_request(self, sender: H2Request, response, **_):
+        request_time = datetime.now() - sender.start_time
+        self.log.access(response, sender, sender.META, request_time)
         try:
-            self.cfg.post_request(self, request, request.META, response)
+            self.cfg.post_request(self, sender, sender.META, response)
         except Exception:
             self.log.exception("Exception in post_request hook")
 

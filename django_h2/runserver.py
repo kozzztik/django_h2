@@ -28,8 +28,8 @@ class H2ManagementRunServer:
         asyncio.set_event_loop(loop)
         ssl_ctx = self.get_ssl_context()
         app_server = Server(loop, serve_static=True, max_workers=1)
-        signals.post_request.connect(self.log_response)
-        signals.request_exception.connect(self.log_exception)
+        signals.post_request.connect(log_response)
+        signals.request_exception.connect(log_exception)
         coro = loop.create_server(
             app_server.protocol_factory,
             host=self.server_address[0],
@@ -59,45 +59,49 @@ class H2ManagementRunServer:
         # ctx.load_verify_locations(cafile='server_ca.pem')
         return ctx
 
-    def log_date_time_string(self):
-        """Return the current time formatted for logging."""
-        now = time.time()
-        year, month, day, hh, mm, ss, x, y, z = time.localtime(now)
-        s = "%02d/%3s/%04d %02d:%02d:%02d" % (
-                day, self.monthname[month], year, hh, mm, ss)
-        return s
 
-    monthname = [None,
-                 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+def log_date_time_string():
+    """Return the current time formatted for logging."""
+    now = time.time()
+    year, month, day, hh, mm, ss, x, y, z = time.localtime(now)
+    s = "%02d/%3s/%04d %02d:%02d:%02d" % (
+            day, monthname[month], year, hh, mm, ss)
+    return s
 
-    def log_response(self, request: H2Request, response: HttpResponse, **_):
-        extra = {
-            "request": request,
-            "server_time": self.log_date_time_string(),
-            "status_code": response.status_code
-        }
-        if response.status_code >= 500:
-            level = logger.error
-        elif response.status_code >= 400:
-            level = logger.warning
-        else:
-            level = logger.info
-        level(
-            "%s %s %s %s",
-            request.path, "HTTP/2", response.status_code, request.h2_bytes_send,
-            extra=extra)
 
-    def log_exception(self, request: H2Request, exc, **_):
-        extra = {
-            "request": request,
-            "server_time": self.log_date_time_string(),
-            "status_code": 500
-        }
-        logger.exception(
-            "%s %s %s %s",
-            request.path, "HTTP/2", 500, str(exc),
-            extra=extra)
+monthname = [None,
+             'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+             'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+
+def log_response(sender: H2Request, response: HttpResponse, **_):
+    extra = {
+        "request": sender,
+        "server_time": log_date_time_string(),
+        "status_code": response.status_code
+    }
+    if response.status_code >= 500:
+        level = logger.error
+    elif response.status_code >= 400:
+        level = logger.warning
+    else:
+        level = logger.info
+    level(
+        "%s %s %s %s",
+        sender.path, "HTTP/2", response.status_code, sender.h2_bytes_send,
+        extra=extra)
+
+
+def log_exception(sender: H2Request, exc, **_):
+    extra = {
+        "request": sender,
+        "server_time": log_date_time_string(),
+        "status_code": 500
+    }
+    logger.exception(
+        "%s %s %s %s",
+        sender.path, "HTTP/2", 500, str(exc),
+        extra=extra)
 
 
 def patch():
