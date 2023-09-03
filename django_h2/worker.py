@@ -52,9 +52,9 @@ class H2Worker(Worker):
             if not self.cfg.reload:
                 raise
             self.log.exception(e)
-        signals.pre_request(self.pre_request)
-        signals.post_request(self.post_request)
-        signals.request_exception(self.request_exc)
+        signals.pre_request.connect(self.pre_request)
+        signals.post_request.connect(self.post_request)
+        signals.request_exception.connect(self.request_exc)
 
     def get_ssl_context(self):
         if not self.cfg.is_ssl:
