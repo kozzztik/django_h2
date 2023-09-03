@@ -1,6 +1,6 @@
 import asyncio
 
-import typing as t
+from datetime import datetime
 import io
 
 from django.utils.functional import cached_property
@@ -14,7 +14,9 @@ class H2Request(HttpRequest):
     h2_task: asyncio.Task = None
     h2_bytes_send = 0
 
-    def __init__(self, protocol: H2Protocol, stream_id: int, headers, root_path):
+    def __init__(
+            self, protocol: H2Protocol, stream_id: int, headers, root_path):
+        self.start_time = datetime.now()
         self.h2_protocol = protocol
         self.h2_stream_id = stream_id
         self.scope = scope = {}
