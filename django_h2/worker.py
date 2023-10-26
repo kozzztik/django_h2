@@ -24,6 +24,7 @@ class H2Worker(Worker):
                 sock=s,
                 ssl=ssl_context)
             servers.append(self.loop.run_until_complete(coro))
+        self.loop.create_task(self.notify_task())
         # Serve requests until Ctrl+C is pressed
         try:
             self.loop.run_forever()
@@ -36,6 +37,10 @@ class H2Worker(Worker):
             server.close()
             self.loop.run_until_complete(server.wait_closed())
         self.loop.close()
+
+    async def notify_task(self):
+        self.notify()
+        await asyncio.sleep(1)  # TODO
 
     def load_wsgi(self):
         self.loop = asyncio.new_event_loop()
@@ -68,11 +73,12 @@ class H2Worker(Worker):
 
     def post_request(self, sender: H2Request, response, **_):
         request_time = datetime.now() - sender.start_time
-        self.log.access(response, sender, sender.META, request_time)
         try:
+            self.log.access(response, sender, sender.META, request_time)
             self.cfg.post_request(self, sender, sender.META, response)
-        except Exception:
+        except Exception as exc:
             self.log.exception("Exception in post_request hook")
+            print(exc)
 
     def request_exc(self, request, exc, **_):
         pass
