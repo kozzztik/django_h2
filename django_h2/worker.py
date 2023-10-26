@@ -39,8 +39,9 @@ class H2Worker(Worker):
         self.loop.close()
 
     async def notify_task(self):
-        self.notify()
-        await asyncio.sleep(1)  # TODO
+        while True:
+            self.notify()
+            await asyncio.sleep(1)  # TODO
 
     def load_wsgi(self):
         self.loop = asyncio.new_event_loop()
@@ -80,5 +81,5 @@ class H2Worker(Worker):
             self.log.exception("Exception in post_request hook")
             print(exc)
 
-    def request_exc(self, request, exc, **_):
+    def request_exc(self, sender, exc, **_):
         pass
