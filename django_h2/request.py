@@ -52,7 +52,6 @@ class H2Request(HttpRequest):
         local_sock = \
             protocol.transport.get_extra_info('peername') or ("unknown", 0)
         self.META = {
-            "HTTP_HOST": scope.get(":authority"),
             "REQUEST_METHOD": self.method,
             "QUERY_STRING": query_string,
             "SCRIPT_NAME": self.script_name,
@@ -66,6 +65,8 @@ class H2Request(HttpRequest):
             "wsgi.multithread": True,
             "wsgi.multiprocess": True,
         }
+        if ':authority' in scope:
+            self.META["HTTP_HOST"] = scope[":authority"]
         # Headers go into META.
         for name, value in headers:
             if name == "content-length":
