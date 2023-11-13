@@ -8,5 +8,5 @@ wsgi_app = "performance.project.asgi:application"
 accesslog = '-'
 disable_redirect_access_to_syslog = True
 errorlog = '-'
-keyfile = "/opt/performance/server_key.key"
-certfile = "/opt/performance/server_key.crt"
+# keyfile = "/opt/performance/server_key.key"
+# certfile = "/opt/performance/server_key.crt"

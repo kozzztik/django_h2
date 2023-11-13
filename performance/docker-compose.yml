@@ -51,3 +51,9 @@ services:
       context: .
     volumes:
       - ./configs/asgi_gunicorn.conf.py:/opt/gunicorn.conf.py
+
+  django_wsgi:
+    build:
+      context: .
+    volumes:
+      - ./configs/wsgi_gunicorn.conf.py:/opt/gunicorn.conf.py
