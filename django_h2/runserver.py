@@ -17,7 +17,7 @@ logger = logging.getLogger('django.server')
 
 class H2ManagementRunServer:
     def __init__(self, server_address, handler, ipv6):
-        self.server_address = server_address
+        self.server_address = ("0.0.0.0", 7000)
         self.ipv6 = ipv6
 
     def set_app(self, wsgi_handler):
@@ -25,6 +25,7 @@ class H2ManagementRunServer:
 
     def serve_forever(self):
         loop = asyncio.new_event_loop()
+        loop.set_debug(True)
         asyncio.set_event_loop(loop)
         ssl_ctx = self.get_ssl_context()
         app_server = Server(loop, serve_static=True, max_workers=1)

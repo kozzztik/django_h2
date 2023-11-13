@@ -74,6 +74,10 @@ class H2Worker(Worker):
 
     def post_request(self, sender: H2Request, response, **_):
         request_time = datetime.now() - sender.start_time
+        # TODO make better logging
+        response.status = response.status_code  # wsgi logging compatibility
+        sender.META['RAW_URI'] = sender.scope[':path']
+        sender.META['SERVER_PROTOCOL'] = 'HTTP2'
         try:
             self.log.access(response, sender, sender.META, request_time)
             self.cfg.post_request(self, sender, sender.META, response)
