@@ -25,11 +25,10 @@ class H2Worker(Worker):
                 ssl=ssl_context)
             servers.append(self.loop.run_until_complete(coro))
         self.loop.create_task(self.notify_task())
-        # Serve requests until Ctrl+C is pressed
+
         try:
             self.loop.run_forever()
         except KeyboardInterrupt:
-            # TODO maybe something specific for gunicorn
             pass
 
         # Close the server
@@ -41,7 +40,7 @@ class H2Worker(Worker):
     async def notify_task(self):
         while True:
             self.notify()
-            await asyncio.sleep(1)  # TODO
+            await asyncio.sleep(1)
 
     def load_wsgi(self):
         self.loop = asyncio.new_event_loop()
@@ -50,7 +49,7 @@ class H2Worker(Worker):
         try:
             self.server = Server(
                 self.loop,
-                serve_static=True,  # TODO tmp
+                serve_static=self.cfg.serve_static,
                 max_workers=self.cfg.threads,
                 root_path=script_name or "",
             )
