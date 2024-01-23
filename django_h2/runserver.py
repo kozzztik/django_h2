@@ -2,6 +2,7 @@ import asyncio
 import logging
 import socket
 import time
+from importlib.resources import files
 
 from django.core.management.commands import runserver as dj_runserver
 from django.conf import settings
@@ -56,7 +57,12 @@ class H2ManagementRunServer:
         ssl_settings = getattr(settings, 'SSL', {})
         crt_file = ssl_settings.get('cert')
         keyfile = ssl_settings.get('key')
-        ctx.load_cert_chain(certfile=crt_file, keyfile=keyfile)
+        if crt_file and keyfile:
+            ctx.load_cert_chain(certfile=crt_file, keyfile=keyfile)
+        else:
+            if not crt_file:
+                crt_file = str(files('django_h2').joinpath('default.crt'))
+            ctx.load_cert_chain(certfile=crt_file)
         # ctx.load_verify_locations(cafile='server_ca.pem')
         return ctx
 

@@ -11,6 +11,9 @@ setup(
     url='https://github.com/kozzztik/django_h2',
     keywords='email',
     packages=find_packages(),
+    package_data={
+        'default.crt': ['django_h2/default.crt'],
+    },
     include_package_data=True,
     license='https://github.com/kozzztik/django_h2/blob/master/LICENSE',
     classifiers=[

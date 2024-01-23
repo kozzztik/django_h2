@@ -1,7 +1,16 @@
 from OpenSSL import crypto
 
 
-def cert_gen(
+def save_cert_and_key(key_file ="private.key", cert_file="selfsigned.crt"):
+    k, cert = gen_cert()
+    with open(cert_file, "wt") as f:
+        f.write(
+            crypto.dump_certificate(crypto.FILETYPE_PEM, cert).decode("utf-8"))
+    with open(key_file, "wt") as f:
+        f.write(crypto.dump_privatekey(crypto.FILETYPE_PEM, k).decode("utf-8"))
+
+
+def gen_cert(
         email_address="emailAddress",
         common_name="commonName",
         country_name="NT",
@@ -11,9 +20,7 @@ def cert_gen(
         organization_unit_name="organizationUnitName",
         serial_number=0,
         validity_start=0,
-        validity_end=10 * 365 * 24 * 60 * 60,
-        key_file ="private.key",
-        cert_file="selfsigned.crt"):
+        validity_end=10 * 365 * 24 * 60 * 60):
     # can look at generated file using openssl:
     # openssl x509 -inform pem -in selfsigned.crt -noout -text
     # create a key pair
@@ -34,9 +41,4 @@ def cert_gen(
     cert.set_issuer(cert.get_subject())
     cert.set_pubkey(k)
     cert.sign(k, 'sha512')
-    with open(cert_file, "wt") as f:
-        f.write(
-            crypto.dump_certificate(crypto.FILETYPE_PEM, cert).decode("utf-8"))
-    with open(key_file, "wt") as f:
-        f.write(crypto.dump_privatekey(crypto.FILETYPE_PEM, k).decode("utf-8"))
-
+    return k, cert
