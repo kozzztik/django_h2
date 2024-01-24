@@ -18,7 +18,7 @@ logger = logging.getLogger('django.server')
 
 class H2ManagementRunServer:
     def __init__(self, server_address, handler, ipv6):
-        self.server_address = ("0.0.0.0", 7000)
+        self.server_address = server_address
         self.ipv6 = ipv6
 
     def set_app(self, wsgi_handler):
