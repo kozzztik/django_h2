@@ -28,7 +28,8 @@ class H2Handler(BaseHandler):
     def handle_request(self, request: H2Request) -> HttpResponse:
         # Request is complete and can be served.
         set_script_prefix(self.root_path)
-        signals.request_started.send(sender=self.__class__, scope=request.scope)
+        signals.request_started.send(
+            sender=self.__class__, environ=request.META)
         response = self.get_response(request)
         response._handler_class = self.__class__
         return response

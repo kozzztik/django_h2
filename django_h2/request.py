@@ -1,35 +1,41 @@
-import asyncio
-
-from datetime import datetime
 import io
 
 from django.utils.functional import cached_property
 from django.http import HttpRequest, QueryDict, parse_cookie
+from django.utils.datastructures import CaseInsensitiveMapping
 
-from django_h2.base_protocol import H2Protocol
+from django_h2.base_protocol import StreamContext
+
+
+class HttpHeaders(CaseInsensitiveMapping):
+    def __init__(self, headers_data):
+        headers = {}
+        for header, value in headers_data:
+            name = header.replace("_", "-").lower()
+            if name in headers:
+                headers[name] += ',' + value
+            else:
+                headers[name] = value
+        super().__init__(headers)
+
+    def __getitem__(self, key):
+        """Allow header lookup using underscores in place of hyphens."""
+        return super().__getitem__(key.replace("_", "-"))
 
 
 class H2Request(HttpRequest):
     _body = None  # To disable inherited body legacy magic
-    h2_task: asyncio.Task = None
-    h2_bytes_send = 0
+    headers = None
+    _post_parse_error = False
+    _read_started = False
+    resolver_match = None
 
-    def __init__(
-            self, protocol: H2Protocol, stream_id: int, headers, root_path):
-        self.start_time = datetime.now()
-        self.h2_protocol = protocol
-        self.h2_stream_id = stream_id
-        self.scope = scope = {}
-        for h, v in headers:
-            if h in scope:
-                scope[h] += "," + v
-            else:
-                scope[h] = v
-        self._post_parse_error = False
-        self._read_started = False
-        self.resolver_match = None
+    def __init__(self, context: StreamContext, headers, root_path):
+        self.context = context
+        self.headers = HttpHeaders(headers)
         self.script_name = root_path
-        path, *rest = scope[':path'].split("?", 2)
+
+        path, *rest = self.headers[':path'].split("?", 2)
         query_string = rest[0] if rest else ''
         if root_path and path.startswith(root_path):
             self.path_info = path[len(root_path):]
@@ -45,14 +51,16 @@ class H2Request(HttpRequest):
         else:
             self.path = path
         # HTTP basics.
-        self.method = self.scope[":method"].upper()
+        self.method = self.headers[":method"].upper()
         # Ensure query string is encoded correctly.
         peer_sock = \
-            protocol.transport.get_extra_info('peername') or ('127.0.0.1', 0)
+            context.transport.get_extra_info('peername') or ('127.0.0.1', 0)
         local_sock = \
-            protocol.transport.get_extra_info('peername') or ("unknown", 0)
+            context.transport.get_extra_info('peername') or ("unknown", 0)
         self.META = {
+            "SERVER_PROTOCOL": "HTTP2",
             "REQUEST_METHOD": self.method,
+            "RAW_URI": self.headers[':path'],
             "QUERY_STRING": query_string,
             "SCRIPT_NAME": self.script_name,
             "PATH_INFO": self.path_info,
@@ -65,20 +73,16 @@ class H2Request(HttpRequest):
             "wsgi.multithread": True,
             "wsgi.multiprocess": True,
         }
-        if ':authority' in scope:
-            self.META["HTTP_HOST"] = scope[":authority"]
+        if ':authority' in self.headers:
+            self.META["HTTP_HOST"] = self.headers[":authority"]
         # Headers go into META.
-        for name, value in headers:
+        for name, value in self.headers.items():
             if name == "content-length":
                 corrected_name = "CONTENT_LENGTH"
             elif name == "content-type":
                 corrected_name = "CONTENT_TYPE"
             else:
                 corrected_name = "HTTP_%s" % name.upper().replace("-", "_")
-            # HTTP/2 say only ASCII chars are allowed in headers, but decode
-            # latin1 just in case.
-            if corrected_name in self.META:
-                value = self.META[corrected_name] + "," + value
             self.META[corrected_name] = value
         # Pull out request encoding, if provided.
         self._set_content_type_params(self.META)
@@ -88,14 +92,14 @@ class H2Request(HttpRequest):
     def stream_complete(self):
         self._stream.seek(0)
         self._body = self._stream.read()
-        self._stream.seek(0)
+        self._stream = io.BytesIO(self._body)
 
     @cached_property
     def GET(self):
         return QueryDict(self.META["QUERY_STRING"])
 
     def _get_scheme(self):
-        return self.scope.get(":scheme") or super()._get_scheme()
+        return self.headers.get(":scheme") or super()._get_scheme()
 
     def _get_post(self):
         if not hasattr(self, "_post"):
@@ -115,4 +119,5 @@ class H2Request(HttpRequest):
 
     @cached_property
     def COOKIES(self):
-        return parse_cookie(self.META.get("HTTP_COOKIE", ""))
+        return parse_cookie(self.headers.get("cookie", ""))
+

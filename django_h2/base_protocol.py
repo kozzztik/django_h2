@@ -11,6 +11,7 @@ be called multiple times, and that applications must handle that possibility.
 """
 import asyncio
 import collections
+import datetime
 from typing import List, Tuple, Dict
 
 from h2.config import H2Configuration
@@ -148,3 +149,31 @@ class H2Protocol(asyncio.Protocol):
     def end_stream(self, stream_id: int):
         self.conn.end_stream(stream_id)
         self.transport.write(self.conn.data_to_send())
+
+    def send_headers(self, stream_id, headers):
+        self.conn.send_headers(stream_id, headers)
+        self.transport.write(self.conn.data_to_send())
+
+
+class StreamContext:
+    bytes_send = 0
+    start_time: datetime.datetime = None
+    protocol: H2Protocol = None
+    stream_id: int = None
+
+    def __init__(self, protocol: H2Protocol, stream_id: int):
+        self.protocol = protocol
+        self.stream_id = stream_id
+        self.start_time = datetime.datetime.now()
+        self.transport = protocol.transport
+
+    async def send_data(self, data: bytes, end_stream: bool = True):
+        await self.protocol.send_data(
+            data, self.stream_id, end_stream=end_stream)
+        self.bytes_send += len(data)
+
+    def end_stream(self):
+        self.protocol.end_stream(self.stream_id)
+
+    def close(self):
+        pass

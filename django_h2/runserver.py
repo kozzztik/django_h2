@@ -10,7 +10,7 @@ from django.http import HttpResponse
 
 from django_h2.server import Server
 from django_h2.utils import configure_ssl_context
-from django_h2.handler import H2Request
+from django_h2.protocol import RequestContext
 from django_h2 import signals
 
 logger = logging.getLogger('django.server')
@@ -26,7 +26,6 @@ class H2ManagementRunServer:
 
     def serve_forever(self):
         loop = asyncio.new_event_loop()
-        loop.set_debug(True)
         asyncio.set_event_loop(loop)
         ssl_ctx = self.get_ssl_context()
         app_server = Server(loop, serve_static=True, max_workers=1)
@@ -81,9 +80,9 @@ monthname = [None,
              'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 
-def log_response(sender: H2Request, response: HttpResponse, **_):
+def log_response(sender: RequestContext, response: HttpResponse, **_):
     extra = {
-        "request": sender,
+        "request": sender.request,
         "server_time": log_date_time_string(),
         "status_code": response.status_code
     }
@@ -95,19 +94,20 @@ def log_response(sender: H2Request, response: HttpResponse, **_):
         level = logger.info
     level(
         "%s %s %s %s",
-        sender.path, "HTTP/2", response.status_code, sender.h2_bytes_send,
+        sender.request.path, "HTTP/2",
+        response.status_code, sender.bytes_send,
         extra=extra)
 
 
-def log_exception(sender: H2Request, exc, **_):
+def log_exception(sender: RequestContext, exc, **_):
     extra = {
-        "request": sender,
+        "request": sender.request,
         "server_time": log_date_time_string(),
         "status_code": 500
     }
     logger.exception(
         "%s %s %s %s",
-        sender.path, "HTTP/2", 500, str(exc),
+        sender.request.path, "HTTP/2", 500, str(exc),
         extra=extra)
 
 

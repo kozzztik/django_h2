@@ -1,8 +1,8 @@
 import logging
 from concurrent.futures.thread import ThreadPoolExecutor
 
-from django_h2.handler import H2Handler, StaticHandler, H2Request
-from django_h2.protocol import DjangoH2Protocol
+from django_h2.handler import H2Handler, StaticHandler
+from django_h2.protocol import DjangoH2Protocol, RequestContext
 from django_h2 import signals
 
 logger = logging.getLogger("django.server")
@@ -22,22 +22,18 @@ class Server:
     def protocol_factory(self):
         return DjangoH2Protocol(self)
 
-    async def handle_request(
-            self,
-            protocol: DjangoH2Protocol,
-            stream_id: int,
-            request: H2Request):
+    async def handle_request(self, ctx: RequestContext):
         try:
-            signals.pre_request.send(request)
+            signals.pre_request.send(ctx)
             response = None
             if self.static_handler:
-                response = self.static_handler.handle_request(request)
+                response = self.static_handler.handle_request(ctx.request)
             if not response:
                 response = await self.loop.run_in_executor(
-                    self.thread_pool, self.handler.handle_request, request)
-            await protocol.send_response(stream_id, response)
-            signals.post_request.send(request, response=response)
+                    self.thread_pool, self.handler.handle_request, ctx.request)
+            await ctx.send_response(response)
+            signals.post_request.send(ctx, response=response)
         except Exception as e:
-            signals.request_exception.send(request, exc=e)
+            signals.request_exception.send(ctx, exc=e)
         finally:
-            protocol.end_stream(stream_id)
+            ctx.end_stream()

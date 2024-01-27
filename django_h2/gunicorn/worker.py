@@ -5,7 +5,7 @@ import os
 from gunicorn.workers.base import Worker
 from gunicorn.sock import ssl_context as gconf_ssl_context
 
-from django_h2.handler import H2Request
+from django_h2.protocol import RequestContext
 from django_h2.server import Server
 from django_h2.utils import configure_ssl_context
 from django_h2 import signals
@@ -68,21 +68,19 @@ class H2Worker(Worker):
         context = configure_ssl_context(context)
         return context
 
-    def pre_request(self, sender: H2Request, **_):
-        self.cfg.pre_request(self, sender)
+    def pre_request(self, sender: RequestContext, **_):
+        self.cfg.pre_request(self, sender.request)
 
-    def post_request(self, sender: H2Request, response, **_):
+    def post_request(self, sender: RequestContext, response, **_):
         request_time = datetime.now() - sender.start_time
+        request = sender.request
         # TODO make better logging
         response.status = response.status_code  # wsgi logging compatibility
-        sender.META['RAW_URI'] = sender.scope[':path']
-        sender.META['SERVER_PROTOCOL'] = 'HTTP2'
         try:
-            self.log.access(response, sender, sender.META, request_time)
-            self.cfg.post_request(self, sender, sender.META, response)
+            self.log.access(response, request, request.META, request_time)
+            self.cfg.post_request(self, request, request.META, response)
         except Exception as exc:
-            self.log.exception("Exception in post_request hook")
-            print(exc)
+            self.log.exception("Exception in post_request hook %s", exc)
 
     def request_exc(self, sender, exc, **_):
         pass
