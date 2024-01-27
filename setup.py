@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 
 __version__ = '0.1'
 
@@ -10,7 +10,7 @@ setup(
     author='https://github.com/kozzztik',
     url='https://github.com/kozzztik/django_h2',
     keywords='email',
-    packages=find_packages(),
+    packages=['django_h2'],
     package_data={
         'default.crt': ['django_h2/default.crt'],
     },
