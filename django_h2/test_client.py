@@ -17,8 +17,7 @@ class AsyncClientHandler(django_client.AsyncClientHandler):
             )
         protocol = None
         if 'HTTP_H2_PROTOCOL' in request.META:
-            request.h2_stream_id = 0
-            protocol = request.h2_protocol = SSEH2ProtocolMock()
+            protocol = request.context = SSEContextMock()
         response = await super().get_response_async(request)
         if protocol:
             response.events = protocol
@@ -26,7 +25,8 @@ class AsyncClientHandler(django_client.AsyncClientHandler):
                 protocol.handle(response)
         return response
 
-class SSEH2ProtocolMock:
+
+class SSEContextMock:
     timeout = 15
 
     def __init__(self):
@@ -39,6 +39,7 @@ class SSEH2ProtocolMock:
 
     def handle(self, response: sse.SSEResponse):
         self.task = asyncio.create_task(response.handler)
+        response.streaming = False  # hack for dj4, remove it dj5
 
     def close(self):
         if self.task:
