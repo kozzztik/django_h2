@@ -10,6 +10,7 @@ from django_h2.request import H2Request
 
 
 class H2StreamingResponse(HttpResponse):
+    streaming = True
     handler: Awaitable
 
 
