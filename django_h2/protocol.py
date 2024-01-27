@@ -102,6 +102,8 @@ class DjangoH2Protocol(H2Protocol):
                 ("Set-Cookie", c.output(header=""))
             )
         self.conn.send_headers(stream_id, response_headers)
+        self.transport.write(self.conn.data_to_send())
+
         if isinstance(response, H2StreamingResponse):
             await response.handler
             return 0
