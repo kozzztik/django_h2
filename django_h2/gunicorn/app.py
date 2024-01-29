@@ -27,26 +27,29 @@ class DjangoGunicornApp(Application):
         if 'GUNICORN_FD' in os.environ:
             self.log.reopen_files()
 
-        if self.app_uri:
-            os.environ[ENVIRONMENT_VARIABLE] = self.app_uri
-        else:
+        if self.app_uri is None:
             if self.cfg.django_settings is not None:
-                if ',' in self.cfg.django_settings:
-                    for path in self.cfg.django_settings.split(','):
-                        try:
-                            importlib.import_module(path.strip())
-                        except ImportError:
-                            continue
-                        else:
-                            os.environ[ENVIRONMENT_VARIABLE] = path.strip()
-                            break
+                self.app_uri = self.cfg.django_settings.strip()
+            else:
+                self.app_uri = os.environ[ENVIRONMENT_VARIABLE]
+
+        if self.app_uri is not None:
+            if ',' in self.app_uri:
+                for path in self.app_uri.split(','):
+                    try:
+                        importlib.import_module(path.strip())
+                    except ImportError:
+                        continue
+                    else:
+                        self.app_uri = path.strip()
+                        break
                 else:
-                    os.environ[ENVIRONMENT_VARIABLE] = \
-                        self.cfg.django_settings.strip()
-        django_settings = os.environ[ENVIRONMENT_VARIABLE]
-        if not django_settings:
+                    raise config.ConfigError("Django settings not available")
+
+        if not self.app_uri:
             raise config.ConfigError("Django settings not configured")
-        self.log.info("Using django settings %s", django_settings)
+        os.environ[ENVIRONMENT_VARIABLE] = self.app_uri
+        self.log.info("Using django settings %s", self.app_uri)
         if self.cfg.serve_static:
             self.log.info("Serving django static.")
 

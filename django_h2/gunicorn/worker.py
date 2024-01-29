@@ -11,7 +11,7 @@ from django_h2.utils import configure_ssl_context
 from django_h2 import signals
 
 
-class H2Worker(Worker):
+class H2Worker(Worker):  # TODO max requests
     server: Server = None
     loop: asyncio.AbstractEventLoop = None
 
