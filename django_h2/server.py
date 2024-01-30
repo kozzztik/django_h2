@@ -10,7 +10,8 @@ logger = logging.getLogger("django.server")
 
 class Server:
     def __init__(
-            self, loop, max_workers=None, serve_static=False, root_path=""):
+            self, loop, max_workers=None, serve_static=False, root_path="",
+            logger=None):
         self.handler = H2Handler()
         self.static_handler = None
         if serve_static:
@@ -18,9 +19,10 @@ class Server:
         self.thread_pool = ThreadPoolExecutor(max_workers=max_workers)
         self.root_path = root_path
         self.loop = loop
+        self.logger = logger
 
     def protocol_factory(self):
-        return DjangoH2Protocol(self)
+        return DjangoH2Protocol(self, logger=self.logger)
 
     async def handle_request(self, ctx: RequestContext):
         try:

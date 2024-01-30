@@ -30,8 +30,9 @@ RequestData = collections.namedtuple('RequestData', ['headers', 'data'])
 class H2Protocol(asyncio.Protocol):
     flow_control_futures: Dict[int, asyncio.Future] = None
 
-    def __init__(self):
-        config = H2Configuration(client_side=False, header_encoding='utf-8')
+    def __init__(self, logger=None):
+        config = H2Configuration(
+            client_side=False, header_encoding='utf-8', logger=logger)
         self.conn = H2Connection(config=config)
         self.transport = None
         self.flow_control_futures = {}

@@ -57,8 +57,8 @@ class RequestContext(StreamContext):
 class DjangoH2Protocol(H2Protocol):
     stream_data: Dict[int, RequestContext]
 
-    def __init__(self, server):
-        super().__init__()
+    def __init__(self, server, logger=None):
+        super().__init__(logger=logger)
         self.stream_data = {}
         self.server = server
         self.max_size = settings.FILE_UPLOAD_MAX_MEMORY_SIZE

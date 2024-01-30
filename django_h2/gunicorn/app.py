@@ -10,7 +10,6 @@ from django.conf import ENVIRONMENT_VARIABLE
 
 class DjangoGunicornApp(Application):
     app_uri = None
-    log = None
 
     def init(self, parser, opts, args):
         if len(args) > 0:
@@ -22,10 +21,10 @@ class DjangoGunicornApp(Application):
 
     def load_config(self):
         super().load_config()
-        self.log = self.cfg.logger_class(self.cfg)
+        self.logger = self.cfg.logger_class(self.cfg)
         # reopen files
         if 'GUNICORN_FD' in os.environ:
-            self.log.reopen_files()
+            self.logger.reopen_files()
 
         if self.app_uri is None:
             if self.cfg.django_settings is not None:
@@ -49,9 +48,9 @@ class DjangoGunicornApp(Application):
         if not self.app_uri:
             raise config.ConfigError("Django settings not configured")
         os.environ[ENVIRONMENT_VARIABLE] = self.app_uri
-        self.log.info("Using django settings %s", self.app_uri)
+        self.logger.info("Using django settings %s", self.app_uri)
         if self.cfg.serve_static:
-            self.log.info("Serving django static.")
+            self.logger.info("Serving django static.")
 
     def load(self):
         pass
