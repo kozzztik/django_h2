@@ -9,9 +9,7 @@ def configure_ssl_context(ctx=None):
         ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
     # RFC 7540 Section 9.2: Implementations of HTTP/2 MUST use TLS version 1.2
     # or higher. Disable TLS 1.1 and lower.
-    ctx.options |= (
-            ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
-    )
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
 
     # RFC 7540 Section 9.2.1: A deployment of HTTP/2 over TLS 1.2 MUST disable
     # compression.

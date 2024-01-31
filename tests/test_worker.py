@@ -1,7 +1,9 @@
 import asyncio
 import os
-import threading
 import socket
+import ssl
+import threading
+from importlib.resources import files
 import logging
 from unittest import mock
 
@@ -112,6 +114,20 @@ class WorkerThread(threading.Thread):
         self._conn.initiate_connection()
         self._sock.sendall(self._conn.data_to_send())
 
+    def connect_ssl(self, context: ssl.SSLContext):
+        if self._sock:
+            return
+        self._sock = socket.create_connection(
+            self.worker.sockets[0].getsockname(), timeout=10)
+        self._sock = context.wrap_socket(
+            self._sock, server_hostname='127.0.0.1')
+        self._sock.settimeout(10)
+        config = h2.config.H2Configuration()
+        self._conn = h2.connection.H2Connection(config=config)
+        self._conn.initiate_connection()
+        self._sock.sendall(self._conn.data_to_send())
+
+
     def make_request(self, headers, data=None, stream_id=1) -> Response:
         self._connect()
         self._conn.send_headers(stream_id,  headers, end_stream=data is None)
@@ -153,13 +169,19 @@ class WorkerThread(threading.Thread):
         return resp
 
 
-def test_worker_init(django_config):
+@pytest.fixture(name="server_sock")
+def server_sock_fixture():
     sock_server = socket.socket()
     sock_server.bind(('127.0.0.1', 0))
+    yield sock_server
+    sock_server.close()
+
+
+def test_worker_init(django_config, server_sock):
     with mock.patch('sys.argv', ['path']):
         app = DjangoGunicornApp()
 
-    with WorkerThread(sock_server, app) as thread:
+    with WorkerThread(server_sock, app) as thread:
         response = thread.make_request([
             (':authority', '127.0.0.1'),
             (':scheme', 'http'),
@@ -168,3 +190,46 @@ def test_worker_init(django_config):
         )
     assert response.status_code == 200
     assert response.body == b"{'foo': 'bar'}"
+
+
+def test_worker_ssl(django_config, server_sock):
+    crt_file = str(files('django_h2').joinpath('default.crt'))
+    with mock.patch('sys.argv', ['path', '--certfile', crt_file]):
+        app = DjangoGunicornApp()
+
+    with WorkerThread(server_sock, app) as thread:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        thread.connect_ssl(context)
+        response = thread.make_request([
+            (':authority', '127.0.0.1'),
+            (':scheme', 'https'),
+            (':method', 'GET'),
+            (':path', '/ping/?foo2=bar3')]
+        )
+    assert response.status_code == 200
+    assert response.body == b"{'foo2': 'bar3'}"
+
+
+def test_post_request_exception(django_config, server_sock):
+    with mock.patch('sys.argv', ['path']):
+        app = DjangoGunicornApp()
+
+    def post_request(sender, reqeust, env, resp):
+        raise ValueError("foobar")
+    app.cfg.set("post_request", post_request)
+    with WorkerThread(server_sock, app) as thread:
+        with mock.patch.object(app.logger, "exception") as logger_mock:
+            response = thread.make_request([
+                (':authority', '127.0.0.1'),
+                (':scheme', 'http'),
+                (':method', 'GET'),
+                (':path', '/ping/?foo=bar')]
+            )
+    assert response.status_code == 200
+    assert response.body == b"{'foo': 'bar'}"
+    assert logger_mock.called
+    assert logger_mock.call_args[0][0] == "Exception in post_request hook %s"
+    assert isinstance(logger_mock.call_args[0][1], ValueError)
+    assert logger_mock.call_args[0][1].args == ('foobar',)
