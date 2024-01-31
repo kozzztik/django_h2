@@ -3,7 +3,6 @@ import tempfile
 from unittest import mock
 
 from django.conf import ENVIRONMENT_VARIABLE
-import pytest
 
 from django_h2.gunicorn.app import DjangoGunicornApp, run
 from django_h2.gunicorn.worker import H2Worker
