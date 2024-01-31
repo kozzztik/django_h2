@@ -1,5 +1,4 @@
 django == 4.2.4
-h2
-pytest
-pylint
+h2 == 4.1.0
 gunicorn == 21.2.0
+pyopenssl==24.0.0

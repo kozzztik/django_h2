@@ -69,7 +69,8 @@ class H2ManagementRunServer:
 def log_date_time_string():
     """Return the current time formatted for logging."""
     now = time.time()
-    year, month, day, hh, mm, ss, x, y, z = time.localtime(now)
+    year, month, day, hh, mm, ss, _, _, _ = time.localtime(now)
+    # pylint: disable=consider-using-f-string
     s = "%02d/%3s/%04d %02d:%02d:%02d" % (
             day, monthname[month], year, hh, mm, ss)
     return s

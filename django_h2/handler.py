@@ -1,5 +1,4 @@
 import logging
-import typing as t
 from urllib.parse import urlparse
 
 from django.conf import settings

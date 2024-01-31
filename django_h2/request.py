@@ -29,7 +29,9 @@ class H2Request(HttpRequest):
     _post_parse_error = False
     _read_started = False
     resolver_match = None
+    _post = None
 
+    # pylint: disable=super-init-not-called
     def __init__(self, context: StreamContext, headers, root_path):
         self.context = context
         self.headers = HttpHeaders(headers)
@@ -44,10 +46,7 @@ class H2Request(HttpRequest):
         # The Django path is different from ASGI scope path args, it should
         # combine with script name.
         if root_path:
-            self.path = "%s/%s" % (
-                root_path.rstrip("/"),
-                path.replace("/", "", 1),
-            )
+            self.path = f'{root_path.rstrip("/")}/{path.replace("/", "", 1)}'
         else:
             self.path = path
         # HTTP basics.
@@ -82,7 +81,7 @@ class H2Request(HttpRequest):
             elif name == "content-type":
                 corrected_name = "CONTENT_TYPE"
             else:
-                corrected_name = "HTTP_%s" % name.upper().replace("-", "_")
+                corrected_name = f'HTTP_{name.upper().replace("-", "_")}'
             self.META[corrected_name] = value
         # Pull out request encoding, if provided.
         self._set_content_type_params(self.META)
@@ -94,6 +93,8 @@ class H2Request(HttpRequest):
         self._body = self._stream.read()
         self._stream = io.BytesIO(self._body)
 
+    # Triggers that on base init is overriden, but it is not called
+    # pylint: disable=method-hidden
     @cached_property
     def GET(self):
         return QueryDict(self.META["QUERY_STRING"])
@@ -120,4 +121,3 @@ class H2Request(HttpRequest):
     @cached_property
     def COOKIES(self):
         return parse_cookie(self.headers.get("cookie", ""))
-

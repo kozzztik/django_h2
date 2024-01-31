@@ -3,13 +3,14 @@ from OpenSSL import crypto
 
 def save_cert_and_key(key_file ="private.key", cert_file="selfsigned.crt"):
     k, cert = gen_cert()
-    with open(cert_file, "wt") as f:
+    with open(cert_file, "wt", encoding='utf-8') as f:
         f.write(
             crypto.dump_certificate(crypto.FILETYPE_PEM, cert).decode("utf-8"))
-    with open(key_file, "wt") as f:
+    with open(key_file, "wt", encoding='utf-8') as f:
         f.write(crypto.dump_privatekey(crypto.FILETYPE_PEM, k).decode("utf-8"))
 
 
+# pylint: disable=too-many-arguments
 def gen_cert(
         email_address="emailAddress",
         common_name="commonName",

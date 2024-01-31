@@ -33,7 +33,7 @@ def test_django_settigns_config_args(capsys):
     # set by config file
     with tempfile.TemporaryDirectory() as folder:
         path = os.path.join(folder, 'gunicorn.conf.py')
-        with open(path, 'w') as f:
+        with open(path, 'w', encoding='utf-8') as f:
             f.write('django_settings="foobar3"\n')
             f.close()
         with mock.patch('sys.argv', ['path', f'--config={path}']):
@@ -68,7 +68,7 @@ def test_django_settings_list(capsys):
 
     # if none is available
     os.environ[ENVIRONMENT_VARIABLE] = ''
-    with mock.patch('sys.argv', ['path', f'bar,foo']):
+    with mock.patch('sys.argv', ['path', 'bar,foo']):
         with mock.patch('sys.exit', mock.MagicMock()) as exit_mock:
             DjangoGunicornApp()
     assert exit_mock.called
@@ -92,7 +92,7 @@ def test_django_serving_static():
     # set by config
     with tempfile.TemporaryDirectory() as folder:
         path = os.path.join(folder, 'gunicorn.conf.py')
-        with open(path, 'w') as f:
+        with open(path, 'w', encoding='utf-8') as f:
             f.write('serve_static=True\n')
             f.close()
         with mock.patch('sys.argv', ['path', f'--config={path}']):

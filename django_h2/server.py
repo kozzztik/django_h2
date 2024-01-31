@@ -1,14 +1,12 @@
-import logging
 from concurrent.futures.thread import ThreadPoolExecutor
 
 from django_h2.handler import H2Handler, StaticHandler
 from django_h2.protocol import DjangoH2Protocol, RequestContext
 from django_h2 import signals
 
-logger = logging.getLogger("django.server")
-
 
 class Server:
+    # pylint: disable=too-many-arguments
     def __init__(
             self, loop, max_workers=None, serve_static=False, root_path="",
             logger=None):

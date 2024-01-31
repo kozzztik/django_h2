@@ -28,5 +28,6 @@ def pytest_sessionstart(session):
     os.geteuid = mock.MagicMock()
     os.getegid = mock.MagicMock()
     os.chown = mock.MagicMock()
+    # pylint: disable=import-outside-toplevel
     from gunicorn.workers import workertmp
     workertmp.IS_CYGWIN = True

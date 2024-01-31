@@ -1,11 +1,10 @@
 import os
 import importlib
 
-from gunicorn.app.base import Application
-from gunicorn import config
-
 import django
 from django.conf import ENVIRONMENT_VARIABLE
+from gunicorn.app.base import Application
+from gunicorn import config
 
 
 class DjangoGunicornApp(Application):

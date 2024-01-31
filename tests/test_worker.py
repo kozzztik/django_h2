@@ -35,8 +35,8 @@ class UrlConf:
     ]
 
 
-@pytest.fixture
-def django_config():
+@pytest.fixture(name="django_config")
+def django_config_fixture():
     os.environ[ENVIRONMENT_VARIABLE] = empty_settings.__name__
     django.setup()
     with override_settings(ROOT_URLCONF=UrlConf):
@@ -103,7 +103,7 @@ class WorkerThread(threading.Thread):
 
     def make_request(self, headers, data=None, stream_id=1) -> Response:
         self._connect()
-        self._conn.send_headers(stream_id,  headers, end_stream=(data is None))
+        self._conn.send_headers(stream_id,  headers, end_stream=data is None)
         self._sock.sendall(self._conn.data_to_send())
         if data is not None:
             self._conn.send_data(stream_id, data, end_stream=True)
@@ -132,10 +132,10 @@ class WorkerThread(threading.Thread):
                     break
                 elif isinstance(event, h2.events.ResponseReceived):
                     resp.raw_headers = event.headers
-                    resp.headers = dict([
-                        (k.decode('utf-8'), v.decode('utf-8'))
+                    resp.headers = {
+                        k.decode('utf-8'): v.decode('utf-8')
                         for k, v in event.headers
-                    ])
+                    }
                     resp.status_code = int(resp.headers.get(':status'))
             # send any pending data to the server
             self._sock.sendall(self._conn.data_to_send())
@@ -148,7 +148,8 @@ def test_worker_init(django_config):
     with mock.patch(
             'gunicorn.app.base.get_default_config_file',
             return_value=None):
-        app = DjangoGunicornApp()
+        with mock.patch('sys.argv', ['path']):
+            app = DjangoGunicornApp()
 
     worker = H2Worker(0, 0, [sock_server], app, 0, app.cfg, app.logger)
 

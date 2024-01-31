@@ -96,4 +96,3 @@ class AsyncClient(django_client.AsyncClient):
     async def sse(self, path, data=None, secure=False, **extra):
         return await self.get(
             path, data=data, secure=secure, h2_protocol="1", **extra)
-
