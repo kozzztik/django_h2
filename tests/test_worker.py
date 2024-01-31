@@ -50,14 +50,24 @@ class Response:
     body = b''
 
 
+class Worker(H2Worker):
+    def __init__(self, server_socket, app, thread):
+        self.thread = thread
+        super().__init__(0, 0, [server_socket], app, 1, app.cfg, app.logger)
+
+    def notify(self):
+        self.thread.started.set()
+
+
 class WorkerThread(threading.Thread):
     _sock: socket.socket | None = None
     _conn: h2.connection.H2Connection | None = None
     exception = None
 
-    def __init__(self, worker: H2Worker):
-        self.worker = worker
+    def __init__(self, server_socket, app):
+        self.worker = Worker(server_socket, app, self)
         self._stopper = threading.Event()
+        self.started = threading.Event()
         super().__init__()
 
     def run(self):
@@ -80,6 +90,7 @@ class WorkerThread(threading.Thread):
 
     def __enter__(self):
         self.start()
+        self.started.wait(5)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -148,9 +159,7 @@ def test_worker_init(django_config):
     with mock.patch('sys.argv', ['path']):
         app = DjangoGunicornApp()
 
-    worker = H2Worker(0, 0, [sock_server], app, 0, app.cfg, app.logger)
-
-    with WorkerThread(worker) as thread:
+    with WorkerThread(sock_server, app) as thread:
         response = thread.make_request([
             (':authority', '127.0.0.1'),
             (':scheme', 'http'),

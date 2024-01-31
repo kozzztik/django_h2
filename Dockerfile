@@ -17,6 +17,7 @@ ADD django_h2 /opt/django_h2
 ADD tests /opt/tests
 ADD .pylintrc /opt/.pylintrc
 ADD .git /opt/.git
+ADD pytest.ini /opt/pytest.ini
 ADD requirements.txt /opt/requirements.txt
 ADD dev_requirements.txt /opt/dev_requirements.txt
 WORKDIR /opt

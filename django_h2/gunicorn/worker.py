@@ -24,13 +24,14 @@ class H2Worker(Worker):  # TODO max requests
                 sock=s,
                 ssl=ssl_context)
             servers.append(self.loop.run_until_complete(coro))
-        self.loop.create_task(self.notify_task())
+        notify_task = self.loop.create_task(self.notify_task())
 
         try:
             self.loop.run_forever()
         except KeyboardInterrupt:
             pass
 
+        notify_task.cancel()
         # Close the server
         for server in servers:
             server.close()
