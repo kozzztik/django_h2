@@ -5,6 +5,15 @@ import socket
 from unittest import mock
 
 import pytest
+from tests import gunicorn_conf
+
+
+@pytest.fixture(autouse=True)
+def gunicorn_default_config():
+    with mock.patch(
+            'gunicorn.app.base.get_default_config_file',
+            return_value=gunicorn_conf.__file__):
+        yield
 
 
 @pytest.hookimpl(trylast=True)

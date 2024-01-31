@@ -9,14 +9,6 @@ from django_h2.gunicorn.app import DjangoGunicornApp, run
 from django_h2.gunicorn.worker import H2Worker
 
 
-@pytest.fixture(autouse=True)
-def disable_default_config():
-    with mock.patch(
-            'gunicorn.app.base.get_default_config_file',
-            return_value=None):
-        yield
-
-
 def test_django_settigns_config_args(capsys):
     with mock.patch('sys.argv', ['path', 'foobar1']):
         app = DjangoGunicornApp()

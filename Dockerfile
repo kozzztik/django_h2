@@ -1,5 +1,6 @@
 FROM python:3.11
 ENV PYTHONUNBUFFERED 1
+ENV PYTHONASYNCIODEBUG 1
 RUN apt-get update
 RUN apt-get -y install python3-openssl
 # for better caching

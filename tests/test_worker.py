@@ -145,11 +145,8 @@ class WorkerThread(threading.Thread):
 def test_worker_init(django_config):
     sock_server = socket.socket()
     sock_server.bind(('127.0.0.1', 0))
-    with mock.patch(
-            'gunicorn.app.base.get_default_config_file',
-            return_value=None):
-        with mock.patch('sys.argv', ['path']):
-            app = DjangoGunicornApp()
+    with mock.patch('sys.argv', ['path']):
+        app = DjangoGunicornApp()
 
     worker = H2Worker(0, 0, [sock_server], app, 0, app.cfg, app.logger)
 
