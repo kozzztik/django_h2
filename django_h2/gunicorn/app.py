@@ -9,6 +9,7 @@ from gunicorn import config
 
 class DjangoGunicornApp(Application):
     app_uri = None
+    _configured = False
 
     def init(self, parser, opts, args):
         if len(args) > 0:
@@ -55,7 +56,15 @@ class DjangoGunicornApp(Application):
         pass
 
     def wsgi(self):
-        django.setup()
+        if not self._configured:
+            try:
+                django.setup()
+            except SyntaxError as e:
+                # TODO: if failed, generate fail app
+                if not self.cfg.reload:
+                    raise
+                self.logger.exception(e)
+            self._configured = True
 
 
 class DjangoSettings(config.Setting):

@@ -17,6 +17,7 @@ import h2.connection
 import h2.config
 import h2.events
 
+from django_h2 import signals
 from django_h2.gunicorn.app import DjangoGunicornApp
 from django_h2.gunicorn.worker import H2Worker
 from tests import empty_settings
@@ -65,9 +66,10 @@ class WorkerThread(threading.Thread):
     _sock: socket.socket | None = None
     _conn: h2.connection.H2Connection | None = None
     exception = None
+    worker_class = Worker
 
     def __init__(self, server_socket, app):
-        self.worker = Worker(server_socket, app, self)
+        self.worker = self.worker_class(server_socket, app, self)
         self._stopper = threading.Event()
         self.started = threading.Event()
         super().__init__()
@@ -119,14 +121,18 @@ class WorkerThread(threading.Thread):
             return
         self._sock = socket.create_connection(
             self.worker.sockets[0].getsockname(), timeout=10)
-        self._sock = context.wrap_socket(
-            self._sock, server_hostname='127.0.0.1')
+        try:
+            self._sock = context.wrap_socket(
+                self._sock, server_hostname='127.0.0.1')
+        except ssl.SSLError:
+            self._sock.close()
+            self._sock = None
+            raise
         self._sock.settimeout(10)
         config = h2.config.H2Configuration()
         self._conn = h2.connection.H2Connection(config=config)
         self._conn.initiate_connection()
         self._sock.sendall(self._conn.data_to_send())
-
 
     def make_request(self, headers, data=None, stream_id=1) -> Response:
         self._connect()
@@ -212,7 +218,36 @@ def test_worker_ssl(django_config, server_sock):
     assert response.body == b"{'foo2': 'bar3'}"
 
 
-def test_post_request_exception(django_config, server_sock):
+def test_worker_ssl_min_version(django_config, server_sock):
+    """
+    RFC 7540 Section 9.2: Implementations of HTTP/2 MUST use TLS version 1.2
+    """
+    crt_file = str(files('django_h2').joinpath('default.crt'))
+    with mock.patch('sys.argv', ['path', '--certfile', crt_file]):
+        app = DjangoGunicornApp()
+
+    with WorkerThread(server_sock, app) as thread:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        with pytest.deprecated_call():
+            context.maximum_version = ssl.TLSVersion.TLSv1_1
+        with pytest.raises(ssl.SSLError) as e:
+            thread.connect_ssl(context)
+        assert 'no protocols available' in str(e)
+        context.maximum_version = ssl.TLSVersion.TLSv1_2
+        thread.connect_ssl(context)
+        response = thread.make_request([
+            (':authority', '127.0.0.1'),
+            (':scheme', 'https'),
+            (':method', 'GET'),
+            (':path', '/ping/?foo4=bar5')]
+        )
+    assert response.status_code == 200
+    assert response.body == b"{'foo4': 'bar5'}"
+
+
+def test_config_post_request_exception(django_config, server_sock):
     with mock.patch('sys.argv', ['path']):
         app = DjangoGunicornApp()
 
@@ -233,3 +268,49 @@ def test_post_request_exception(django_config, server_sock):
     assert logger_mock.call_args[0][0] == "Exception in post_request hook %s"
     assert isinstance(logger_mock.call_args[0][1], ValueError)
     assert logger_mock.call_args[0][1].args == ('foobar',)
+
+
+def test_keyboard_interrupt(django_config, server_sock):
+    with mock.patch('sys.argv', ['path']):
+        app = DjangoGunicornApp()
+
+    class InterruptedWorker(Worker):
+        async def interrupt_task(self):
+            raise KeyboardInterrupt()
+
+        async def notify_task(self):
+            self.loop.create_task(self.interrupt_task())
+            await super().notify_task()
+
+    class InterruptedThread(WorkerThread):
+        worker_class = InterruptedWorker
+
+    with InterruptedThread(server_sock, app) as thread:
+        thread.join(5)
+        assert thread.worker.loop.is_closed()
+
+
+def test_exceptions_logging(django_config, server_sock):
+    with mock.patch('sys.argv', ['path']):
+        app = DjangoGunicornApp()
+
+    def failing_receiver(*args, **kwargs):
+        raise ValueError("foobar")
+
+    signals.post_request.connect(failing_receiver)
+    try:
+        with mock.patch.object(app.logger, "exception") as logger_mock:
+            with WorkerThread(server_sock, app) as thread:
+                response = thread.make_request([
+                    (':authority', '127.0.0.1'),
+                    (':scheme', 'http'),
+                    (':method', 'GET'),
+                    (':path', '/ping/?foo=bar')]
+                )
+    finally:
+        signals.post_request.disconnect(failing_receiver)
+    assert response.status_code == 200
+    assert response.body == b"{'foo': 'bar'}"
+    assert logger_mock.called
+    assert isinstance(logger_mock.call_args[0][0], ValueError)
+    assert logger_mock.call_args[0][0].args == ('foobar',)

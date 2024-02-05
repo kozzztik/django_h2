@@ -2,3 +2,5 @@ env
 venv
 *.egg-info
 performance/data
+.idea
+.pytest_cache

@@ -47,17 +47,12 @@ class H2Worker(Worker):  # TODO max requests
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
         script_name = os.environ.get("SCRIPT_NAME", "")
-        try:
-            self.server = Server(
-                self.loop,
-                serve_static=self.cfg.serve_static,
-                max_workers=self.cfg.threads,
-                root_path=script_name or "",
-            )
-        except SyntaxError as e:
-            if not self.cfg.reload:
-                raise
-            self.log.exception(e)
+        self.server = Server(
+            self.loop,
+            serve_static=self.cfg.serve_static,
+            max_workers=self.cfg.threads,
+            root_path=script_name or "",
+        )
         signals.pre_request.connect(self.pre_request)
         signals.post_request.connect(self.post_request)
         signals.request_exception.connect(self.request_exc)
@@ -84,4 +79,4 @@ class H2Worker(Worker):  # TODO max requests
             self.log.exception("Exception in post_request hook %s", exc)
 
     def request_exc(self, sender, exc, **_):
-        pass
+        self.log.exception(exc)
