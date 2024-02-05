@@ -1,5 +1,7 @@
 from concurrent.futures.thread import ThreadPoolExecutor
 
+from django.http import HttpResponse
+
 from django_h2.handler import H2Handler, StaticHandler
 from django_h2.protocol import DjangoH2Protocol, RequestContext
 from django_h2 import signals
@@ -37,3 +39,15 @@ class Server:
             signals.request_exception.send(ctx, exc=e)
         finally:
             ctx.end_stream()
+
+
+class FallbackServer(Server):
+    def __init__(self, loop, error_message: str, logger=None):
+        self.error_message = error_message.encode("utf-8")
+        super().__init__(loop, logger=logger)
+
+    async def handle_request(self, ctx: RequestContext):
+        await ctx.send_response(HttpResponse(
+            status=500, reason="Internal Server Error",
+            content_type="text/plain", content=self.error_message
+        ))

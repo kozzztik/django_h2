@@ -314,3 +314,36 @@ def test_exceptions_logging(django_config, server_sock):
     assert logger_mock.called
     assert isinstance(logger_mock.call_args[0][0], ValueError)
     assert logger_mock.call_args[0][0].args == ('foobar',)
+
+
+def test_failed_loading_django_with_reload(django_config, server_sock):
+    with mock.patch('sys.argv', ['path', '--reload']):
+        app = DjangoGunicornApp()
+
+    with mock.patch.object(app.logger, "exception") as logger_mock:
+        with mock.patch("django.setup", side_effect=ValueError('foobar')):
+            with WorkerThread(server_sock, app) as thread:
+                response = thread.make_request([
+                    (':authority', '127.0.0.1'),
+                    (':scheme', 'http'),
+                    (':method', 'GET'),
+                    (':path', '/ping/?foo=bar')]
+                )
+    assert response.status_code == 500
+    assert b'raise effect' in response.body
+    assert logger_mock.called
+    assert isinstance(logger_mock.call_args[0][0], ValueError)
+    assert logger_mock.call_args[0][0].args == ('foobar',)
+
+
+def test_failed_loading_django_no_reload(django_config, server_sock):
+    with mock.patch('sys.argv', ['path']):
+        app = DjangoGunicornApp()
+
+    with mock.patch.object(logging, "exception") as logger_mock:
+        with mock.patch("django.setup", side_effect=ValueError('foobar')):
+            with WorkerThread(server_sock, app) as thread:
+                thread.join(1)
+    assert logger_mock.called
+    assert isinstance(logger_mock.call_args[0][0], ValueError)
+    assert logger_mock.call_args[0][0].args == ('foobar',)

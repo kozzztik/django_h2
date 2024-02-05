@@ -1,12 +1,15 @@
 import asyncio
 from datetime import datetime
 import os
+import sys
+import io
+import traceback
 
 from gunicorn.workers.base import Worker
 from gunicorn.sock import ssl_context as gconf_ssl_context
 
 from django_h2.protocol import RequestContext
-from django_h2.server import Server
+from django_h2.server import Server, FallbackServer
 from django_h2.utils import configure_ssl_context
 from django_h2 import signals
 
@@ -46,6 +49,18 @@ class H2Worker(Worker):  # TODO max requests
     def load_wsgi(self):
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
+
+        try:
+            self.app.wsgi()  # init django app
+        except Exception as e:
+            if not self.cfg.reload:
+                raise
+            self.log.exception(e)
+            # if loading failed, provide server that will tell exception
+            tb_string = io.StringIO()
+            traceback.print_tb(sys.exc_info()[2], file=tb_string)
+            self.server = FallbackServer(self.loop, tb_string.getvalue())
+            return
         script_name = os.environ.get("SCRIPT_NAME", "")
         self.server = Server(
             self.loop,
