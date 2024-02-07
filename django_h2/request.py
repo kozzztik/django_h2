@@ -22,6 +22,9 @@ class HttpHeaders(CaseInsensitiveMapping):
         """Allow header lookup using underscores in place of hyphens."""
         return super().__getitem__(key.replace("_", "-"))
 
+    def __setitem__(self, key, value):
+        self._store[key.lower()] = (key, value)
+
 
 class H2Request(HttpRequest):
     _body = None  # To disable inherited body legacy magic
@@ -29,12 +32,16 @@ class H2Request(HttpRequest):
     _post_parse_error = False
     _read_started = False
     resolver_match = None
-    _post = None
 
     # pylint: disable=super-init-not-called
     def __init__(self, context: StreamContext, headers, root_path):
         self.context = context
         self.headers = HttpHeaders(headers)
+        # override scheme header with real data
+        if context.transport.get_extra_info('sslcontext'):
+            self.headers[':scheme'] = 'https'
+        else:
+            self.headers[':scheme'] = 'http'
         self.script_name = root_path
 
         path, *rest = self.headers[':path'].split("?", 2)
@@ -108,7 +115,7 @@ class H2Request(HttpRequest):
         return self._post
 
     def _set_post(self, post):
-        self._post = post
+        self._post = post  # pylint: disable=attribute-defined-outside-init
 
     def _get_files(self):
         if not hasattr(self, "_files"):

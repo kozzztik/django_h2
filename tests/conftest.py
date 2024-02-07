@@ -8,6 +8,14 @@ import pytest
 from tests import gunicorn_conf
 
 
+@pytest.fixture(name="server_sock")
+def server_sock_fixture():
+    sock_server = socket.socket()
+    sock_server.bind(('127.0.0.1', 0))
+    yield sock_server
+    sock_server.close()
+
+
 @pytest.fixture(autouse=True)
 def gunicorn_default_config():
     with mock.patch(
