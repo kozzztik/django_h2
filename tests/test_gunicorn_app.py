@@ -1,4 +1,5 @@
 import os
+import importlib
 import tempfile
 from unittest import mock
 
@@ -114,3 +115,26 @@ def test_default_worker():
     with mock.patch('sys.argv', ['path', 'foobar1']):
         app = DjangoGunicornApp()
     assert app.cfg.worker_class is H2Worker
+
+
+def test_reopen_log_files():
+    """ Compatibility with gunicorn environ GUNICORN_FD param """
+    with mock.patch('gunicorn.glogging.Logger.reopen_files') as reopen:
+        with mock.patch('sys.argv', ['path']):
+            DjangoGunicornApp()
+        assert not reopen.called
+
+        os.environ['GUNICORN_FD'] = "1"
+        try:
+            with mock.patch('sys.argv', ['path']):
+                DjangoGunicornApp()
+        finally:
+            del os.environ['GUNICORN_FD']
+        assert reopen.called
+
+
+def test_running_as_module():
+    with mock.patch('sys.argv', ['path', 'foobar']):
+        with mock.patch.object(DjangoGunicornApp, 'run') as run_mock:
+            importlib.import_module('django_h2.__main__')
+    assert run_mock.called

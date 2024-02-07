@@ -52,6 +52,9 @@ class Response:
     headers: dict[str, str] = None
     body = b''
 
+    def __getitem__(self, item):
+        return self.headers[item]
+
 
 class Worker(H2Worker):
     def __init__(self, server_socket, app, thread):
@@ -347,3 +350,45 @@ def test_failed_loading_django_no_reload(django_config, server_sock):
     assert logger_mock.called
     assert isinstance(logger_mock.call_args[0][0], ValueError)
     assert logger_mock.call_args[0][0].args == ('foobar',)
+
+
+@override_settings(STATICFILES_DIRS=[files('django_h2')], STATIC_URL='/static/')
+def test_serving_static(django_config, server_sock):
+    with mock.patch('sys.argv', ['path', '--serve_static']):
+        app = DjangoGunicornApp()
+
+    with WorkerThread(server_sock, app) as thread:
+        response = thread.make_request([
+            (':authority', '127.0.0.1'),
+            (':scheme', 'http'),
+            (':method', 'GET'),
+            (':path', '/static/default.crt')]
+        )
+        assert response.status_code == 200
+        assert response['content-disposition'] == 'inline; filename="default.crt"'
+        assert len(response.body) > 0
+        # app still works
+        response = thread.make_request([
+            (':authority', '127.0.0.1'),
+            (':scheme', 'http'),
+            (':method', 'GET'),
+            (':path', '/ping/?foo5=bar6')],
+            stream_id=3
+        )
+        assert response.status_code == 200
+        assert response.body == b"{'foo5': 'bar6'}"
+
+
+@override_settings(STATICFILES_DIRS=[files('django_h2')], STATIC_URL='/static/')
+def test_not_serving_static_by_default(django_config, server_sock):
+    with mock.patch('sys.argv', ['path']):
+        app = DjangoGunicornApp()
+
+    with WorkerThread(server_sock, app) as thread:
+        response = thread.make_request([
+            (':authority', '127.0.0.1'),
+            (':scheme', 'http'),
+            (':method', 'GET'),
+            (':path', '/static/default.crt')]
+        )
+    assert response.status_code == 404
