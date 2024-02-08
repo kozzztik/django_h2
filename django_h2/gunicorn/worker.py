@@ -27,6 +27,7 @@ class H2Worker(Worker):  # TODO max requests
                 sock=s,
                 ssl=ssl_context)
             servers.append(self.loop.run_until_complete(coro))
+        signals.server_started.send(self.server)
         notify_task = self.loop.create_task(self.notify_task())
 
         try:

@@ -38,6 +38,7 @@ class H2ManagementRunServer:
             family=socket.AF_INET6 if self.ipv6 else socket.AF_UNSPEC,
             ssl=ssl_ctx)
         server = loop.run_until_complete(coro)
+        signals.server_started.send(app_server)
 
         # Serve requests until Ctrl+C is pressed
         try:
@@ -49,6 +50,8 @@ class H2ManagementRunServer:
         server.close()
         loop.run_until_complete(server.wait_closed())
         loop.close()
+        signals.post_request.disconnect(log_response)
+        signals.request_exception.disconnect(log_exception)
 
     @staticmethod
     def get_ssl_context():

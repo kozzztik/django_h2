@@ -14,7 +14,7 @@ from django.test import override_settings
 from django_h2 import signals
 from django_h2.gunicorn.app import DjangoGunicornApp
 from tests import empty_settings
-from tests.utils import WorkerThread, Worker
+from tests.utils import WorkerThread
 
 
 def ping_view(request):
@@ -126,16 +126,9 @@ def test_keyboard_interrupt(django_config, server_sock):
     with mock.patch('sys.argv', ['path']):
         app = DjangoGunicornApp()
 
-    class InterruptedWorker(Worker):
-        async def interrupt_task(self):
-            raise KeyboardInterrupt()
-
-        async def notify_task(self):
-            self.loop.create_task(self.interrupt_task())
-            await super().notify_task()
-
     class InterruptedThread(WorkerThread):
-        worker_class = InterruptedWorker
+        async def stopping_task(self, loop):
+            raise KeyboardInterrupt()
 
     with InterruptedThread(server_sock, app) as thread:
         thread.join(5)

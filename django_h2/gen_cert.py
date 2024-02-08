@@ -1,8 +1,9 @@
 from OpenSSL import crypto
 
 
-def save_cert_and_key(key_file ="private.key", cert_file="selfsigned.crt"):
-    k, cert = gen_cert()
+def save_cert_and_key(
+        key_file="private.key", cert_file="selfsigned.crt", **kwargs):
+    k, cert = gen_cert(**kwargs)
     with open(cert_file, "wt", encoding='utf-8') as f:
         f.write(
             crypto.dump_certificate(crypto.FILETYPE_PEM, cert).decode("utf-8"))
