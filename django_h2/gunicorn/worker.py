@@ -9,25 +9,35 @@ from gunicorn.workers.base import Worker
 from gunicorn.sock import ssl_context as gconf_ssl_context
 
 from django_h2.protocol import Stream
-from django_h2.server import Server, FallbackServer
+from django_h2 import handler
+from django_h2.protocol import DjangoH2Protocol
 from django_h2.utils import configure_ssl_context
 from django_h2 import signals
 
 
 class H2Worker(Worker):  # TODO max requests
-    server: Server = None
+    handler = None
     loop: asyncio.AbstractEventLoop = None
+    script_name = ''
+    protocol_logger = None
+
+    def protocol_factory(self):
+        return DjangoH2Protocol(
+            self.handler,
+            logger=self.protocol_logger,
+            root_path=self.script_name
+        )
 
     def run(self):
         servers = []
         ssl_context = self.get_ssl_context()
         for s in self.sockets:
             coro = self.loop.create_server(
-                self.server.protocol_factory,
+                self.protocol_factory,
                 sock=s,
                 ssl=ssl_context)
             servers.append(self.loop.run_until_complete(coro))
-        signals.server_started.send(self.server)
+        signals.server_started.send(self.handler)
         notify_task = self.loop.create_task(self.notify_task())
 
         try:
@@ -60,15 +70,15 @@ class H2Worker(Worker):  # TODO max requests
             # if loading failed, provide server that will tell exception
             tb_string = io.StringIO()
             traceback.print_tb(sys.exc_info()[2], file=tb_string)
-            self.server = FallbackServer(self.loop, tb_string.getvalue())
+            self.handler = handler.FallbackHandler(tb_string.getvalue())
             return
-        script_name = os.environ.get("SCRIPT_NAME", "")
-        self.server = Server(
+        self.script_name = os.environ.get("SCRIPT_NAME", "")
+        self.handler = handler.H2Handler(
             self.loop,
-            serve_static=self.cfg.serve_static,
             max_workers=self.cfg.threads,
-            root_path=script_name or "",
         )
+        if self.cfg.serve_static:
+            self.handler = handler.StaticHandler(self.handler)
         signals.pre_request.connect(self.pre_request)
         signals.post_request.connect(self.post_request)
         signals.request_exception.connect(self.request_exc)

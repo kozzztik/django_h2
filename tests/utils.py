@@ -52,7 +52,8 @@ class BaseWorkerThread(threading.Thread):
 
     def _on_start(self, sender, **kwargs):
         self.started.set()
-        sender.loop.create_task(self.stopping_task(sender.loop))
+        loop = asyncio.get_event_loop()
+        loop.create_task(self.stopping_task(loop))
 
     def _internal_run(self):
         raise NotImplementedError()
@@ -167,7 +168,7 @@ class WorkerThread(BaseWorkerThread):
 
     def _internal_run(self):
         self.worker.load_wsgi()
-        self.worker.server.logger = logger
+        self.worker.protocol_logger = logger
         self.worker.run()
 
     def get_server_addr(self):

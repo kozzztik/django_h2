@@ -5,6 +5,7 @@ from h2.errors import ErrorCodes
 from django.conf import settings
 from django.http import HttpResponse
 
+from django_h2 import signals
 from django_h2.base_protocol import BaseH2Protocol, BaseStream
 from django_h2.request import H2Request
 
@@ -46,8 +47,18 @@ class Stream(BaseStream):
 
     def event_stream_complete(self):
         self.request.stream_complete()
-        self.task = asyncio.create_task(
-            self.protocol.server.handle_request(self))
+        self.task = asyncio.create_task(self.handle_task())
+
+    async def handle_task(self):
+        try:
+            signals.pre_request.send(self)
+            response = await self.protocol.handler.handle_request(self.request)
+            await self.send_response(response)
+            signals.post_request.send(self, response=response)
+        except Exception as e:
+            signals.request_exception.send(self, exc=e)
+        finally:
+            self.end_stream()
 
     async def send_response(self, response: HttpResponse):
         response_headers = [
@@ -77,7 +88,7 @@ class Stream(BaseStream):
 class DjangoH2Protocol(BaseH2Protocol):
     stream_class = Stream
 
-    def __init__(self, server, logger=None):
+    def __init__(self, handler, logger=None, root_path=''):
         super().__init__(logger=logger)
-        self.server = server
-        self.root_path = server.root_path
+        self.handler = handler
+        self.root_path = root_path

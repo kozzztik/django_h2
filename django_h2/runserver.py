@@ -8,15 +8,17 @@ from django.core.management.commands import runserver as dj_runserver
 from django.conf import settings
 from django.http import HttpResponse
 
-from django_h2.server import Server
+from django_h2.handler import H2Handler, StaticHandler
 from django_h2.utils import configure_ssl_context
-from django_h2.protocol import Stream
+from django_h2.protocol import Stream, DjangoH2Protocol
 from django_h2 import signals
 
 logger = logging.getLogger('django.server')
 
 
 class H2ManagementRunServer:
+    handler = None
+
     def __init__(self, server_address, handler, ipv6):
         self.server_address = server_address
         self.ipv6 = ipv6
@@ -24,21 +26,24 @@ class H2ManagementRunServer:
     def set_app(self, wsgi_handler):
         pass
 
+    def protocol_factory(self):
+        return DjangoH2Protocol(self.handler)
+
     def serve_forever(self):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         ssl_ctx = self.get_ssl_context()
-        app_server = Server(loop, serve_static=True, max_workers=1)
+        self.handler = StaticHandler(H2Handler(loop, max_workers=1))
         signals.post_request.connect(log_response)
         signals.request_exception.connect(log_exception)
         coro = loop.create_server(
-            app_server.protocol_factory,
+            self.protocol_factory,
             host=self.server_address[0],
             port=self.server_address[1],
             family=socket.AF_INET6 if self.ipv6 else socket.AF_UNSPEC,
             ssl=ssl_ctx)
         server = loop.run_until_complete(coro)
-        signals.server_started.send(app_server)
+        signals.server_started.send(self.handler)
 
         # Serve requests until Ctrl+C is pressed
         try:
@@ -65,6 +70,7 @@ class H2ManagementRunServer:
             if not crt_file:
                 crt_file = str(files('django_h2').joinpath('default.crt'))
             ctx.load_cert_chain(certfile=crt_file)
+        # TODO
         # ctx.load_verify_locations(cafile='server_ca.pem')
         return ctx
 
