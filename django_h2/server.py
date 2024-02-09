@@ -3,7 +3,7 @@ from concurrent.futures.thread import ThreadPoolExecutor
 from django.http import HttpResponse
 
 from django_h2.handler import H2Handler, StaticHandler
-from django_h2.protocol import DjangoH2Protocol, RequestContext
+from django_h2.protocol import DjangoH2Protocol, Stream
 from django_h2 import signals
 
 
@@ -24,21 +24,23 @@ class Server:
     def protocol_factory(self):
         return DjangoH2Protocol(self, logger=self.logger)
 
-    async def handle_request(self, ctx: RequestContext):
+    async def handle_request(self, stream: Stream):
         try:
-            signals.pre_request.send(ctx)
+            signals.pre_request.send(stream)
             response = None
             if self.static_handler:
-                response = self.static_handler.handle_request(ctx.request)
+                response = self.static_handler.handle_request(stream.request)
             if not response:
                 response = await self.loop.run_in_executor(
-                    self.thread_pool, self.handler.handle_request, ctx.request)
-            await ctx.send_response(response)
-            signals.post_request.send(ctx, response=response)
+                    self.thread_pool,
+                    self.handler.handle_request,
+                    stream.request)
+            await stream.send_response(response)
+            signals.post_request.send(stream, response=response)
         except Exception as e:
-            signals.request_exception.send(ctx, exc=e)
+            signals.request_exception.send(stream, exc=e)
         finally:
-            ctx.end_stream()
+            stream.end_stream()
 
 
 class FallbackServer(Server):
@@ -46,8 +48,8 @@ class FallbackServer(Server):
         self.error_message = error_message.encode("utf-8")
         super().__init__(loop, logger=logger)
 
-    async def handle_request(self, ctx: RequestContext):
-        await ctx.send_response(HttpResponse(
+    async def handle_request(self, stream: Stream):
+        await stream.send_response(HttpResponse(
             status=500, reason="Internal Server Error",
             content_type="text/plain", content=self.error_message
         ))

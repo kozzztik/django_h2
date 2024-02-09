@@ -4,7 +4,7 @@ from django.utils.functional import cached_property
 from django.http import HttpRequest, QueryDict, parse_cookie
 from django.utils.datastructures import CaseInsensitiveMapping
 
-from django_h2.base_protocol import StreamContext
+from django_h2.base_protocol import BaseStream
 
 
 class HttpHeaders(CaseInsensitiveMapping):
@@ -34,11 +34,11 @@ class H2Request(HttpRequest):
     resolver_match = None
 
     # pylint: disable=super-init-not-called
-    def __init__(self, context: StreamContext, headers, root_path):
-        self.context = context
+    def __init__(self, stream: BaseStream, headers, root_path):
+        self.stream = stream
         self.headers = HttpHeaders(headers)
         # override scheme header with real data
-        if context.transport.get_extra_info('sslcontext'):
+        if stream.transport.get_extra_info('sslcontext'):
             self.headers[':scheme'] = 'https'
         else:
             self.headers[':scheme'] = 'http'
@@ -60,9 +60,9 @@ class H2Request(HttpRequest):
         self.method = self.headers[":method"].upper()
         # Ensure query string is encoded correctly.
         peer_sock = \
-            context.transport.get_extra_info('peername') or ('127.0.0.1', 0)
+            stream.transport.get_extra_info('peername') or ('127.0.0.1', 0)
         local_sock = \
-            context.transport.get_extra_info('peername') or ("unknown", 0)
+            stream.transport.get_extra_info('peername') or ("unknown", 0)
         self.META = {
             "SERVER_PROTOCOL": "HTTP2",
             "REQUEST_METHOD": self.method,

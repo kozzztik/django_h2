@@ -10,7 +10,7 @@ from django.http import HttpResponse
 
 from django_h2.server import Server
 from django_h2.utils import configure_ssl_context
-from django_h2.protocol import RequestContext
+from django_h2.protocol import Stream
 from django_h2 import signals
 
 logger = logging.getLogger('django.server')
@@ -84,7 +84,7 @@ monthname = [None,
              'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 
-def log_response(sender: RequestContext, response: HttpResponse, **_):
+def log_response(sender: Stream, response: HttpResponse, **_):
     extra = {
         "request": sender.request,
         "server_time": log_date_time_string(),
@@ -103,7 +103,7 @@ def log_response(sender: RequestContext, response: HttpResponse, **_):
         extra=extra)
 
 
-def log_exception(sender: RequestContext, exc, **_):
+def log_exception(sender: Stream, exc, **_):
     extra = {
         "request": sender.request,
         "server_time": log_date_time_string(),

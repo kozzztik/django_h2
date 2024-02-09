@@ -1,11 +1,11 @@
 import asyncio
-from typing import List, Tuple, Dict, Awaitable
+from typing import List, Tuple, Awaitable
 
 from h2.errors import ErrorCodes
 from django.conf import settings
-from django.http import FileResponse, HttpResponse
+from django.http import HttpResponse
 
-from django_h2.base_protocol import H2Protocol, StreamContext
+from django_h2.base_protocol import BaseH2Protocol, BaseStream
 from django_h2.request import H2Request
 
 
@@ -14,20 +14,42 @@ class H2StreamingResponse(HttpResponse):
     handler: Awaitable
 
 
-class RequestContext(StreamContext):
+class Stream(BaseStream):
     request: H2Request
     task: asyncio.Task = None
-    chunk_size = 2**16
+    bytes_received = 0
+
+    def __init__(
+            self,
+            protocol: BaseH2Protocol,
+            stream_id: int,
+            headers: List[Tuple[str, str]]):
+        super().__init__(protocol, stream_id, headers)
+        self.request = H2Request(self, headers, self.protocol.root_path)
+        self._max_request_size = settings.FILE_UPLOAD_MAX_MEMORY_SIZE
 
     def close(self):
         if self.task and not self.task.done():
             self.task.cancel()
+        super().close()
+
+    def event_receive_data(self, data: bytes):
+        stream = self.request._stream
+        if self.bytes_received + len(data) > self._max_request_size:
+            self.conn.reset_stream(
+                self.stream_id, error_code=ErrorCodes.REFUSED_STREAM
+            )
+            self.transport.write(self.conn.data_to_send())
+            return
+        stream.write(data)
+        self.bytes_received += len(data)
+
+    def event_stream_complete(self):
+        self.request.stream_complete()
+        self.task = asyncio.create_task(
+            self.protocol.server.handle_request(self))
 
     async def send_response(self, response: HttpResponse):
-        # Increase chunk size on file responses (ASGI servers handles low-level
-        # chunking).
-        if isinstance(response, FileResponse):
-            response.block_size = self.chunk_size
         response_headers = [
             (':status', str(response.status_code)),
             *response.items()
@@ -35,10 +57,8 @@ class RequestContext(StreamContext):
         # Collect cookies into headers. Have to preserve header case as there
         # are some non-RFC compliant clients that require e.g. Content-Type.
         for c in response.cookies.values():
-            response_headers.append(
-                ("Set-Cookie", c.output(header=""))
-            )
-        self.protocol.send_headers(self.stream_id, response_headers)
+            response_headers.append(("Set-Cookie", c.output(header="")))
+        self.send_headers(response_headers)
         if isinstance(response, H2StreamingResponse):
             await response.handler
             return
@@ -54,61 +74,10 @@ class RequestContext(StreamContext):
         response.close()   # TODO that is sync operation?
 
 
-class DjangoH2Protocol(H2Protocol):
-    stream_data: Dict[int, RequestContext]
+class DjangoH2Protocol(BaseH2Protocol):
+    stream_class = Stream
 
     def __init__(self, server, logger=None):
         super().__init__(logger=logger)
-        self.stream_data = {}
         self.server = server
-        self.max_size = settings.FILE_UPLOAD_MAX_MEMORY_SIZE
-
-    def request_received(self, headers: List[Tuple[str, str]], stream_id: int):
-        self.stream_data[stream_id] = ctx = RequestContext(self, stream_id)
-        ctx.request = H2Request(ctx, headers, self.server.root_path)
-
-    def receive_data(self, data: bytes, stream_id: int):
-        try:
-            ctx = self.stream_data[stream_id]
-        except KeyError:
-            self.conn.reset_stream(
-                stream_id, error_code=ErrorCodes.PROTOCOL_ERROR
-            )
-            return
-        stream = ctx.request._stream
-        if stream.tell() + len(data) > self.max_size:
-            self.conn.reset_stream(
-                stream_id, error_code=ErrorCodes.REFUSED_STREAM
-            )
-            return
-        stream.write(data)
-
-    def stream_complete(self, stream_id: int):
-        """
-        When a stream is complete, we can send our response.
-        """
-        try:
-            ctx = self.stream_data[stream_id]
-        except KeyError:
-            return  # Just return, we probably 405'd this already
-        ctx.request.stream_complete()
-        ctx.task = asyncio.create_task(self.server.handle_request(ctx))
-
-    def connection_lost(self, exc):
-        while self.stream_data:
-            _, ctx = self.stream_data.popitem()
-            ctx.close()
-        super().connection_lost(exc)
-
-    def stream_reset(self, stream_id: int):
-        """
-        A stream reset was sent. Stop sending data.
-        """
-        ctx = self.stream_data.pop(stream_id)
-        ctx.close()
-        super().stream_reset(stream_id)
-
-    def end_stream(self, stream_id: int):
-        """ Gracefully close stream """
-        if self.stream_data.pop(stream_id, None):
-            super().end_stream(stream_id)
+        self.root_path = server.root_path

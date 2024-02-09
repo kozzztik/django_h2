@@ -8,7 +8,7 @@ import traceback
 from gunicorn.workers.base import Worker
 from gunicorn.sock import ssl_context as gconf_ssl_context
 
-from django_h2.protocol import RequestContext
+from django_h2.protocol import Stream
 from django_h2.server import Server, FallbackServer
 from django_h2.utils import configure_ssl_context
 from django_h2 import signals
@@ -80,10 +80,10 @@ class H2Worker(Worker):  # TODO max requests
         context = configure_ssl_context(context)
         return context
 
-    def pre_request(self, sender: RequestContext, **_):
+    def pre_request(self, sender: Stream, **_):
         self.cfg.pre_request(self, sender.request)
 
-    def post_request(self, sender: RequestContext, response, **_):
+    def post_request(self, sender: Stream, response, **_):
         request_time = datetime.now() - sender.start_time
         request = sender.request
         # TODO make better logging

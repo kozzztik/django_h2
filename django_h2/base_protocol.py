@@ -10,9 +10,8 @@ those without. In particular, it demonstrates the fact that DataReceived may
 be called multiple times, and that applications must handle that possibility.
 """
 import asyncio
-import collections
 import datetime
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Any, Callable
 
 from h2.config import H2Configuration
 from h2.connection import H2Connection
@@ -20,22 +19,21 @@ from h2.events import (
     ConnectionTerminated, DataReceived, RemoteSettingsChanged,
     RequestReceived, StreamEnded, StreamReset, WindowUpdated
 )
+from h2.errors import ErrorCodes
 from h2.exceptions import ProtocolError, StreamClosedError
 from h2.settings import SettingCodes
 
 
-RequestData = collections.namedtuple('RequestData', ['headers', 'data'])
-
-
-class H2Protocol(asyncio.Protocol):
-    flow_control_futures: Dict[int, asyncio.Future] = None
+class BaseH2Protocol(asyncio.Protocol):
+    streams: Dict[int, Any] = None
+    stream_class: Callable
 
     def __init__(self, logger=None):
         config = H2Configuration(
             client_side=False, header_encoding='utf-8', logger=logger)
         self.conn = H2Connection(config=config)
         self.transport = None
-        self.flow_control_futures = {}
+        self.streams = {}
 
     def connection_made(self, transport: asyncio.Transport):
         self.transport = transport
@@ -43,9 +41,9 @@ class H2Protocol(asyncio.Protocol):
         self.transport.write(self.conn.data_to_send())
 
     def connection_lost(self, exc):
-        for future in self.flow_control_futures.values():
-            future.cancel()
-        self.flow_control_futures = {}
+        for stream in self.streams.values():
+            stream.close()
+        self.streams = {}
 
     def data_received(self, data: bytes):
         try:
@@ -75,45 +73,105 @@ class H2Protocol(asyncio.Protocol):
                 self.transport.write(self.conn.data_to_send())
 
     def request_received(self, headers: List[Tuple[str, str]], stream_id: int):
-        raise NotImplementedError()
+        self.streams[stream_id] = self.stream_class(self, stream_id, headers)
 
     def stream_complete(self, stream_id: int):
-        raise NotImplementedError()
+        try:
+            self.streams[stream_id].event_stream_complete()
+        except KeyError:
+            return  # Just return, we probably 405'd this already
 
     def receive_data(self, data: bytes, stream_id: int):
-        raise NotImplementedError()
+        try:
+            self.streams[stream_id].event_receive_data(data)
+        except KeyError:
+            self.conn.reset_stream(
+                stream_id, error_code=ErrorCodes.PROTOCOL_ERROR
+            )
 
     def stream_reset(self, stream_id: int):
         """
         A stream reset was sent. Stop sending data.
         """
-        if stream_id in self.flow_control_futures:
-            future = self.flow_control_futures.pop(stream_id)
-            future.cancel()
+        try:
+            self.streams.pop(stream_id).close()
+        except KeyError:
+            pass
 
-    async def send_data(
-            self, data: bytes, stream_id: int, end_stream: bool = True):
+    def window_updated(self, stream_id: int, delta: int):
+        """
+        A window update frame was received. Unblock some number of flow control
+        Futures.
+        """
+        if not stream_id:
+            for stream in self.streams.values():
+                stream.event_window_updated(delta)
+            return
+        try:
+            self.streams[stream_id].event_window_updated(delta)
+        except KeyError:
+            pass
+
+
+class BaseStream:
+    stream_id: int = None
+    bytes_send = 0
+    start_time: datetime.datetime = None
+    protocol: BaseH2Protocol = None
+    conn: H2Connection = None
+    transport: asyncio.Transport = None
+    _flow_control_future: asyncio.Future | None = None
+
+    def __init__(
+            self,
+            protocol: BaseH2Protocol,
+            stream_id: int,
+            headers: List[Tuple[str, str]]):
+        self.protocol = protocol
+        self.stream_id = stream_id
+        self.conn = protocol.conn
+        self.transport = protocol.transport
+        self.start_time = datetime.datetime.now()
+        self.transport = protocol.transport
+
+    def end_stream(self):
+        self.conn.end_stream(self.stream_id)
+        self.transport.write(self.conn.data_to_send())
+        self.close()
+        # TODO check that it is not done by events
+        self.protocol.streams.pop(self.stream_id)
+
+    def close(self):
+        if self._flow_control_future:
+            self._flow_control_future.cancel()
+            self._flow_control_future = None
+
+    async def wait_for_flow_control(self) -> int:
+        while True:
+            window = self.conn.local_flow_control_window(self.stream_id)
+            if window > 0:
+                return window
+            if not self._flow_control_future:
+                self._flow_control_future = asyncio.Future()
+            await self._flow_control_future
+
+    async def send_data(self, data: bytes, end_stream: bool = True):
         """
         Send data according to the flow control rules.
         """
         if not data and end_stream:
-            self.end_stream(stream_id)
+            self.end_stream()
         while data:
-            while self.conn.local_flow_control_window(stream_id) < 1:
-                try:
-                    await self.wait_for_flow_control(stream_id)
-                except asyncio.CancelledError:
-                    return
-
+            window = await self.wait_for_flow_control()
             chunk_size = min(
-                self.conn.local_flow_control_window(stream_id),
+                window,
                 len(data),
-                self.conn.max_outbound_frame_size,
+                self.protocol.conn.max_outbound_frame_size,
             )
 
             try:
                 self.conn.send_data(
-                    stream_id,
+                    self.stream_id,
                     data[:chunk_size],
                     end_stream=end_stream and (chunk_size == len(data))
                 )
@@ -124,57 +182,23 @@ class H2Protocol(asyncio.Protocol):
 
             self.transport.write(self.conn.data_to_send())
             data = data[chunk_size:]
+            self.bytes_send += chunk_size
 
-    async def wait_for_flow_control(self, stream_id: int):
-        """
-        Waits for a Future that fires when the flow control window is opened.
-        """
-        f = asyncio.Future()
-        self.flow_control_futures[stream_id] = f
-        await f
-
-    def window_updated(self, stream_id: int, delta: int):
+    def event_window_updated(self, delta: int):
         """
         A window update frame was received. Unblock some number of flow control
         Futures.
         """
-        if stream_id and stream_id in self.flow_control_futures:
-            f = self.flow_control_futures.pop(stream_id)
-            f.set_result(delta)
-        elif not stream_id:
-            for f in self.flow_control_futures.values():
-                f.set_result(delta)
+        if self._flow_control_future:
+            self._flow_control_future.set_result(delta)
+            self._flow_control_future = None
 
-            self.flow_control_futures = {}
-
-    def end_stream(self, stream_id: int):
-        self.conn.end_stream(stream_id)
+    def send_headers(self, headers):
+        self.conn.send_headers(self.stream_id, headers)
         self.transport.write(self.conn.data_to_send())
 
-    def send_headers(self, stream_id, headers):
-        self.conn.send_headers(stream_id, headers)
-        self.transport.write(self.conn.data_to_send())
+    def event_stream_complete(self):
+        raise NotImplementedError()
 
-
-class StreamContext:
-    bytes_send = 0
-    start_time: datetime.datetime = None
-    protocol: H2Protocol = None
-    stream_id: int = None
-
-    def __init__(self, protocol: H2Protocol, stream_id: int):
-        self.protocol = protocol
-        self.stream_id = stream_id
-        self.start_time = datetime.datetime.now()
-        self.transport = protocol.transport
-
-    async def send_data(self, data: bytes, end_stream: bool = True):
-        await self.protocol.send_data(
-            data, self.stream_id, end_stream=end_stream)
-        self.bytes_send += len(data)
-
-    def end_stream(self):
-        self.protocol.end_stream(self.stream_id)
-
-    def close(self):
-        pass
+    def event_receive_data(self, data: bytes):
+        raise NotImplementedError()
