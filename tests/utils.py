@@ -86,9 +86,9 @@ class BaseWorkerThread(threading.Thread):
     def get_server_addr(self):
         raise NotImplementedError()
 
-    def _connect(self):
+    def connect(self) -> tuple[socket.socket, h2.connection.H2Connection]:
         if self._sock:
-            return
+            return self._sock, self._conn
         self._sock = socket.create_connection(
             self.get_server_addr(), timeout=10)
         self._sock.settimeout(10)
@@ -96,6 +96,7 @@ class BaseWorkerThread(threading.Thread):
         self._conn = h2.connection.H2Connection(config=config)
         self._conn.initiate_connection()
         self._sock.sendall(self._conn.data_to_send())
+        return self._sock, self._conn
 
     def connect_ssl(self, context: ssl.SSLContext):
         if self._sock:
@@ -116,7 +117,7 @@ class BaseWorkerThread(threading.Thread):
         self._sock.sendall(self._conn.data_to_send())
 
     def make_request(self, headers, data=None, stream_id=None) -> Response:
-        self._connect()
+        self.connect()
         if stream_id is None:
             stream_id = self._conn.get_next_available_stream_id()
         self._conn.send_headers(stream_id,  headers, end_stream=data is None)

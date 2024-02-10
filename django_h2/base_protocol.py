@@ -42,7 +42,7 @@ class BaseH2Protocol(asyncio.Protocol):
 
     def connection_lost(self, exc):
         for stream in self.streams.values():
-            stream.close()
+            stream.close(exc)
         self.streams = {}
 
     def data_received(self, data: bytes):
@@ -139,9 +139,9 @@ class BaseStream:
         self.transport.write(self.conn.data_to_send())
         self.close()
         # TODO check that it is not done by events
-        self.protocol.streams.pop(self.stream_id)
+        # self.protocol.streams.pop(self.stream_id)
 
-    def close(self):
+    def close(self, exc=None):
         if self._flow_control_future:
             self._flow_control_future.cancel()
             self._flow_control_future = None

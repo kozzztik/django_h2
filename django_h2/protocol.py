@@ -17,7 +17,7 @@ class H2StreamingResponse(HttpResponse):
 
 class Stream(BaseStream):
     request: H2Request
-    task: asyncio.Task = None
+    task: asyncio.Task | None = None
     bytes_received = 0
 
     def __init__(
@@ -29,9 +29,17 @@ class Stream(BaseStream):
         self.request = H2Request(self, headers, self.protocol.root_path)
         self._max_request_size = settings.FILE_UPLOAD_MAX_MEMORY_SIZE
 
-    def close(self):
+    def close(self, exc=None):
         if self.task and not self.task.done():
-            self.task.cancel()
+            if exc:
+                self.task.set_exception(exc)
+            else:
+                self.task.cancel()
+            self.task = None
+        elif exc:
+            # normally exception is logged by handling task, but if it is not
+            # running log it here
+            signals.request_exception.send(self, exc=exc)
         super().close()
 
     def event_receive_data(self, data: bytes):
@@ -55,10 +63,10 @@ class Stream(BaseStream):
             response = await self.protocol.handler.handle_request(self.request)
             await self.send_response(response)
             signals.post_request.send(self, response=response)
-        except Exception as e:
+        except BaseException as e:
             signals.request_exception.send(self, exc=e)
         finally:
-            self.end_stream()
+            self.end_stream()  # todo: sometimes does twice with exception
 
     async def send_response(self, response: HttpResponse):
         response_headers = [
@@ -79,9 +87,9 @@ class Stream(BaseStream):
             # it has been overridden in a subclass.
             for part in response:
                 await self.send_data(part, end_stream=False)
+            self.end_stream()
         else:
-            await self.send_data(response.content, end_stream=False)
-        self.end_stream()
+            await self.send_data(response.content, end_stream=True)
         response.close()   # TODO that is sync operation?
 
 
