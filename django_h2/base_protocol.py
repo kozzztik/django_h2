@@ -137,7 +137,7 @@ class BaseStream:
     def end_stream(self):
         self.conn.end_stream(self.stream_id)
         self.transport.write(self.conn.data_to_send())
-        self.close()
+        self.close()  # TODO task sending data coming here and close itself
         # TODO check that it is not done by events
         # self.protocol.streams.pop(self.stream_id)
 

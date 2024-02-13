@@ -31,14 +31,9 @@ class Stream(BaseStream):
 
     def close(self, exc=None):
         if self.task and not self.task.done():
-            if exc:
-                self.task.set_exception(exc)
-            else:
-                self.task.cancel()
+            self.task.cancel()
             self.task = None
-        elif exc:
-            # normally exception is logged by handling task, but if it is not
-            # running log it here
+        if exc:
             signals.request_exception.send(self, exc=exc)
         super().close()
 
@@ -49,9 +44,12 @@ class Stream(BaseStream):
                 self.stream_id, error_code=ErrorCodes.REFUSED_STREAM
             )
             self.transport.write(self.conn.data_to_send())
+            self.protocol.stream_reset(self.stream_id)
             return
         stream.write(data)
         self.bytes_received += len(data)
+        self.conn.increment_flow_control_window(len(data))
+        self.transport.write(self.conn.data_to_send())
 
     def event_stream_complete(self):
         self.request.stream_complete()
@@ -65,6 +63,7 @@ class Stream(BaseStream):
             signals.post_request.send(self, response=response)
         except BaseException as e:
             signals.request_exception.send(self, exc=e)
+            # TODO close here with exception?
         finally:
             self.end_stream()  # todo: sometimes does twice with exception
 
@@ -75,6 +74,7 @@ class Stream(BaseStream):
         ]
         # Collect cookies into headers. Have to preserve header case as there
         # are some non-RFC compliant clients that require e.g. Content-Type.
+        # However, H2 will normalize it anyway.
         for c in response.cookies.values():
             response_headers.append(("Set-Cookie", c.output(header="")))
         self.send_headers(response_headers)
@@ -100,3 +100,6 @@ class DjangoH2Protocol(BaseH2Protocol):
         super().__init__(logger=logger)
         self.handler = handler
         self.root_path = root_path
+        self.conn.local_settings.initial_window_size = (
+            settings.FILE_UPLOAD_MAX_MEMORY_SIZE)
+        self.conn.local_settings.acknowledge()
