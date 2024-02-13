@@ -5,6 +5,8 @@ import socket
 from unittest import mock
 
 import pytest
+
+from django_h2.signals import post_request
 from tests import gunicorn_conf
 
 
@@ -22,6 +24,19 @@ def gunicorn_default_config():
             'gunicorn.app.base.get_default_config_file',
             return_value=gunicorn_conf.__file__):
         yield
+
+
+@pytest.fixture(name="post_request_signal")
+def post_request_signal_fixture():
+    signal_calls = []
+
+    def receiver(**kwargs):
+        signal_calls.append(kwargs)
+    post_request.connect(receiver)
+    try:
+        yield signal_calls
+    finally:
+        post_request.disconnect(receiver)
 
 
 @pytest.hookimpl(trylast=True)

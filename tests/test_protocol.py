@@ -249,8 +249,7 @@ def test_stream_reset(app, server_sock, request_exception_signal):
     assert request_exception_signal == []
 
 
-def test_disconnect_under_flow_control(
-        app, server_sock, request_exception_signal):
+def test_disconnect_under_flow_control(app, server_sock, post_request_signal):
     with WorkerThread(server_sock, app) as thread:
         sock, conn = thread.connect()
         conn.update_settings({SettingCodes.INITIAL_WINDOW_SIZE: 2})
@@ -295,9 +294,9 @@ def test_disconnect_under_flow_control(
     ]
     # Response data arrived in parts of 3 bytes
     assert response_data == [b"{'", b'fo']
-    assert request_exception_signal
+    assert post_request_signal
     # flow control correctly closed
-    assert request_exception_signal[0]['sender']._flow_control_future is None
+    assert post_request_signal[0]['sender']._flow_control_future is None
 
 
 @pytest.mark.parametrize('exc', (ProtocolError, StreamClosedError))
@@ -434,7 +433,8 @@ def test_in_flow_control_happy_path(server_sock, app):
             sock, conn = thread.connect()
             data = sock.recv(65536 * 1024)
             data_events = conn.receive_data(data)
-            assert len(data_events) == 1
+            # here can be also SettingsAck sometimes
+            assert len(data_events) >= 1
             assert isinstance(data_events[0], events.RemoteSettingsChanged)
             assert data_events[0].changed_settings[
                        SettingCodes.INITIAL_WINDOW_SIZE].new_value == 4
@@ -492,6 +492,30 @@ def test_cookie(server_sock, app):
         'content-type': 'text/html; charset=utf-8',
         'set-cookie': 'foo=bar; Path=/'
     }
+
+
+def test_protocol_ping(server_sock, app):
+    with WorkerThread(server_sock, app) as thread:
+        sock, conn = thread.connect()
+        data = sock.recv(65536 * 1024)
+        data_events = conn.receive_data(data)
+        assert len(data_events) == 1
+        assert isinstance(data_events[0], events.RemoteSettingsChanged)
+        conn.ping(b'foobar42')
+        sock.sendall(conn.data_to_send())
+        pong_event = None
+        reading = True
+        while reading:
+            data = sock.recv(65536 * 1024)
+            data_events = conn.receive_data(data)
+            for event in data_events:
+                if isinstance(event, events.SettingsAcknowledged):
+                    pass
+                else:
+                    assert isinstance(event, events.PingAckReceived)
+                    pong_event = event
+                    reading = False
+    assert pong_event.ping_data == b'foobar42'
 
 
 def test_async_stream_calls():

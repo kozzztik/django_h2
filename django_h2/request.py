@@ -92,13 +92,10 @@ class H2Request(HttpRequest):
             self.META[corrected_name] = value
         # Pull out request encoding, if provided.
         self._set_content_type_params(self.META)
-        # Directly assign the body file to be our stream.
-        self._stream = io.BytesIO()
 
-    def stream_complete(self):
-        self._stream.seek(0)
-        self._body = self._stream.read()
-        self._stream = io.BytesIO(self._body)
+    def stream_complete(self, body: io.BytesIO):
+        body.seek(0)
+        self._body = body.read()
 
     # Triggers that on base init is overriden, but it is not called
     # pylint: disable=method-hidden

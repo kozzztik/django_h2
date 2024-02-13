@@ -1,5 +1,7 @@
 import asyncio
-from typing import List, Tuple, Awaitable
+import io
+from contextlib import aclosing
+from typing import List, Tuple
 
 from h2.errors import ErrorCodes
 from django.conf import settings
@@ -8,11 +10,6 @@ from django.http import HttpResponse
 from django_h2 import signals
 from django_h2.base_protocol import BaseH2Protocol, BaseStream
 from django_h2.request import H2Request
-
-
-class H2StreamingResponse(HttpResponse):
-    streaming = True
-    handler: Awaitable
 
 
 class Stream(BaseStream):
@@ -28,6 +25,7 @@ class Stream(BaseStream):
         super().__init__(protocol, stream_id, headers)
         self.request = H2Request(self, headers, self.protocol.root_path)
         self._max_request_size = settings.FILE_UPLOAD_MAX_MEMORY_SIZE
+        self.request_body = io.BytesIO()
 
     def close(self, exc=None):
         if self.task and not self.task.done():
@@ -38,7 +36,6 @@ class Stream(BaseStream):
         super().close()
 
     def event_receive_data(self, data: bytes):
-        stream = self.request._stream
         if self.bytes_received + len(data) > self._max_request_size:
             self.conn.reset_stream(
                 self.stream_id, error_code=ErrorCodes.REFUSED_STREAM
@@ -46,22 +43,28 @@ class Stream(BaseStream):
             self.transport.write(self.conn.data_to_send())
             self.protocol.stream_reset(self.stream_id)
             return
-        stream.write(data)
+        self.request_body.write(data)
         self.bytes_received += len(data)
         self.conn.increment_flow_control_window(len(data))
         self.transport.write(self.conn.data_to_send())
 
     def event_stream_complete(self):
-        self.request.stream_complete()
+        self.request.stream_complete(self.request_body)
+        self.request_body = None  # to free memory
         self.task = asyncio.create_task(self.handle_task())
 
     async def handle_task(self):
         try:
             signals.pre_request.send(self)
             response = await self.protocol.handler.handle_request(self.request)
-            await self.send_response(response)
-            signals.post_request.send(self, response=response)
+            try:
+                await self.send_response(response)
+            finally:
+                signals.post_request.send(self, response=response)
+        except asyncio.CancelledError:
+            raise  # so asyncio know that context closed correctly
         except BaseException as e:
+            # do not raise and log
             signals.request_exception.send(self, exc=e)
             # TODO close here with exception?
         finally:
@@ -77,20 +80,23 @@ class Stream(BaseStream):
         # However, H2 will normalize it anyway.
         for c in response.cookies.values():
             response_headers.append(("Set-Cookie", c.output(header="")))
-        self.send_headers(response_headers)
-        if isinstance(response, H2StreamingResponse):
-            await response.handler
-            return
-        # Streaming responses need to be pinned to their iterator.
-        if response.streaming:
-            # Access `__iter__` and not `streaming_content` directly in case
-            # it has been overridden in a subclass.
-            for part in response:
-                await self.send_data(part, end_stream=False)
-            self.end_stream()
-        else:
-            await self.send_data(response.content, end_stream=True)
-        response.close()   # TODO that is sync operation?
+        try:
+            self.send_headers(response_headers)
+            # Streaming responses need to be pinned to their iterator.
+            if response.streaming:
+                # - Consume via `__aiter__` and not `streaming_content`
+                #   directly, to allow mapping of a sync iterator.
+                # - Use aclosing() when consuming aiter.
+                #   See https://github.com/python/cpython/commit/6e8dcda
+                async with aclosing(aiter(response)) as content:
+                    async for part in content:
+                        await self.send_data(part, end_stream=False)
+                self.end_stream()
+            else:
+                await self.send_data(response.content, end_stream=True)
+        finally:
+            # TODO does django have problems that closed in different thread?
+            response.close()   # TODO that is sync operation?
 
 
 class DjangoH2Protocol(BaseH2Protocol):

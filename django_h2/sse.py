@@ -1,29 +1,46 @@
-from django_h2.request import H2Request
-from django_h2.protocol import H2StreamingResponse
+from collections import namedtuple
+from typing import AsyncIterable
+from django.http import StreamingHttpResponse
 
 
-class SSEResponse(H2StreamingResponse):
-    def __init__(self, request: H2Request, handler):
-        self.handler = handler
-        self._stream = request.stream
+Event = namedtuple('Event', ('name', 'data', 'id'), defaults=(None,))
+
+
+def format_event(event: Event) -> bytes:
+    data = [
+        'event: ' + event.name.replace('\n', r'\n'),
+        'data: ' + event.data.replace('\n', r'\n'),
+    ]
+    if event.id is not None:
+        data.append('id: ' + str(event.id).replace('\n', r'\n'))
+    return '\n'.join(data).encode() + b'\n\n'
+
+
+class SSEResponse(StreamingHttpResponse):
+    # override default getter/setter
+    streaming_content: AsyncIterable[Event] = None
+
+    # that is same as base class declaration
+    # pylint: disable=keyword-arg-before-vararg
+    def __init__(
+            self, streaming_content: AsyncIterable[Event] = (), *args,
+            content_type='text/event-stream',
+            headers=None, **kwargs):
+        sse_headers = {
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no',
+        }
+        if headers:
+            sse_headers.update(headers)
         super().__init__(
-            status=200, content_type='text/event-stream',
-            headers={
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'X-Accel-Buffering': 'no',
-            })
+            *args,
+            streaming_content=streaming_content,
+            content_type=content_type,
+            headers=sse_headers,
+            **kwargs
+        )
 
-    def close(self):
-        super().close()
-        self._stream.end_stream()
-
-    async def send_event(self, name: str, data: str, event_id: str = None):
-        event = [
-            'event: ' + name.replace('\n', r'\n'),
-            'data: ' + data.replace('\n', r'\n'),
-        ]
-        if event_id is not None:
-            event.append('id: ' + str(event_id).replace('\n', r'\n'))
-        event = '\n'.join(event).encode() + b'\n\n'
-        await self._stream.send_data(event, end_stream=False)
+    async def __aiter__(self):
+        async for part in self.streaming_content:
+            yield format_event(part)
