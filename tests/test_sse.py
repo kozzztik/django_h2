@@ -1,5 +1,6 @@
 import asyncio
 import os
+from contextlib import aclosing
 from unittest import mock
 
 from h2 import events
@@ -8,6 +9,7 @@ import pytest
 from django import urls
 from django.conf import ENVIRONMENT_VARIABLE
 from django.test import override_settings
+from django.test.client import AsyncClient
 from django.core.signals import request_finished
 
 from django_h2.gunicorn.app import DjangoGunicornApp
@@ -176,3 +178,15 @@ def test_sse_context_closing(
     assert a_context.__aexit__.called
     assert len(post_request_signal) == 1
     assert len(request_finished_signal) == 1
+
+
+@pytest.mark.asyncio
+async def test_django_client(django_config):
+    client = AsyncClient()
+    response = await client.get('/sse/')
+    assert response.status_code == 200
+    async with aclosing(aiter(response)) as content:
+        data = await anext(content)
+        assert data == b'event: some_name\ndata: some_data\nid: 1\n\n'
+        data = await anext(content)
+        assert data == b'event: some_name\ndata: some_data\nid: 2\n\n'

@@ -17,6 +17,7 @@ def format_event(event: Event) -> bytes:
 
 
 class SSEResponse(StreamingHttpResponse):
+    is_async = True
     # override default getter/setter
     streaming_content: AsyncIterable[Event] = None
 

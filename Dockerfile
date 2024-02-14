@@ -8,7 +8,7 @@ RUN apt-get -y install python3-openssl
 RUN pip install django==5.0.2 h2==4.1.0 gunicorn==21.2.0 pytest==7.2.1 \
     pytest-cov==4.0.0 pylint==2.16.1 billiard==4.1.0 pycodestyle==2.8.0 \
     flake8==4.0.1 pytest-flake8==1.1.1 coverage==6.5.0 coveralls==3.3.1 \
-    pytest-asyncio==0.20.3 pyopenssl==24.0.0
+    pytest-asyncio==0.23.5 pyopenssl==24.0.0
 
 ADD scripts/run_tests.sh /opt/run_tests.sh
 RUN chmod +x /opt/run_tests.sh
