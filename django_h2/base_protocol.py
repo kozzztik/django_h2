@@ -15,6 +15,7 @@ from typing import List, Tuple, Dict, Any, Callable
 
 from h2.config import H2Configuration
 from h2.connection import H2Connection
+from h2.stream import StreamState
 from h2.events import (
     ConnectionTerminated, DataReceived, RemoteSettingsChanged,
     RequestReceived, StreamEnded, StreamReset, WindowUpdated
@@ -135,8 +136,11 @@ class BaseStream:
         self.transport = protocol.transport
 
     def end_stream(self):
-        self.conn.end_stream(self.stream_id)
-        self.transport.write(self.conn.data_to_send())
+        if (self.stream_id in self.conn.streams and
+                self.conn.streams[self.stream_id].state_machine.state not in
+                (StreamState.HALF_CLOSED_LOCAL, StreamState.CLOSED)):
+            self.conn.end_stream(self.stream_id)
+            self.transport.write(self.conn.data_to_send())
         self.close()  # TODO task sending data coming here and close itself
         # TODO check that it is not done by events
         # self.protocol.streams.pop(self.stream_id)

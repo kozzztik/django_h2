@@ -68,7 +68,7 @@ class Stream(BaseStream):
             signals.request_exception.send(self, exc=e)
             # TODO close here with exception?
         finally:
-            self.end_stream()  # todo: sometimes does twice with exception
+            self.end_stream()
 
     async def send_response(self, response: HttpResponse):
         response_headers = [
