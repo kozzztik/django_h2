@@ -74,6 +74,8 @@ def ssl_context_fixture():
     return context
 
 
+@pytest.mark.filterwarnings(
+    "ignore:StreamingHttpResponse must consume synchronous iterators")
 def test_happy_path(django_config, server_port, ssl_context):
     with CommandWorkerThread(server_port) as thread:
         thread.connect_ssl(ssl_context)

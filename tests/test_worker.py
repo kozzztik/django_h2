@@ -194,6 +194,8 @@ def test_failed_loading_django_no_reload(django_config, server_sock):
     assert logger_mock.call_args[0][0].args == ('foobar',)
 
 
+@pytest.mark.filterwarnings(
+    "ignore:StreamingHttpResponse must consume synchronous iterators")
 @override_settings(STATICFILES_DIRS=[files('django_h2')], STATIC_URL='/static/')
 def test_serving_static(django_config, server_sock):
     with mock.patch('sys.argv', ['path', '--serve_static']):
