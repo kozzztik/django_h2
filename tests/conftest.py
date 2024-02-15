@@ -4,10 +4,13 @@ import sys
 import socket
 from unittest import mock
 
+import django
+from django.conf import ENVIRONMENT_VARIABLE
+
 import pytest
 
-from django_h2.signals import post_request
 from tests import gunicorn_conf
+from tests import empty_settings
 
 
 @pytest.fixture(name="server_sock")
@@ -32,6 +35,10 @@ def post_request_signal_fixture():
 
     def receiver(**kwargs):
         signal_calls.append(kwargs)
+
+    # pylint: disable=import-outside-toplevel
+    from django_h2.signals import post_request
+
     post_request.connect(receiver)
     try:
         yield signal_calls
@@ -41,6 +48,8 @@ def post_request_signal_fixture():
 
 @pytest.hookimpl(trylast=True)
 def pytest_sessionstart(session):
+    os.environ[ENVIRONMENT_VARIABLE] = empty_settings.__name__
+    django.setup()
     # for testing under windows
     sys.modules['fcntl'] = mock.MagicMock()
     sys.modules['pwd'] = mock.MagicMock()

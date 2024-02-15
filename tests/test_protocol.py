@@ -1,11 +1,8 @@
-import os
 import threading
 from unittest import mock
 
-import django
 import pytest
 from django import urls
-from django.conf import ENVIRONMENT_VARIABLE
 from django.http import HttpResponse
 from django.test import override_settings
 from h2 import events
@@ -15,8 +12,7 @@ from h2.exceptions import ProtocolError, StreamClosedError
 from django_h2.base_protocol import BaseH2Protocol, BaseStream
 from django_h2.gunicorn.app import DjangoGunicornApp
 from django_h2.signals import request_exception
-from tests import empty_settings
-from tests.utils import WorkerThread
+from tests.utils import WorkerThread, do_receive_response
 
 
 def ping_view(request):
@@ -39,18 +35,11 @@ class UrlConf:
     ]
 
 
-@pytest.fixture(name="django_config")
-def django_config_fixture():
-    os.environ[ENVIRONMENT_VARIABLE] = empty_settings.__name__
-    django.setup()
-    with override_settings(ROOT_URLCONF=UrlConf):
-        yield
-
-
 @pytest.fixture(name="app")
-def app_fixture(django_config):
+def app_fixture():
     with mock.patch('sys.argv', ['path']):
-        return DjangoGunicornApp()
+        with override_settings(ROOT_URLCONF=UrlConf):
+            yield DjangoGunicornApp()
 
 
 @pytest.fixture(name="request_exception_signal")
@@ -64,30 +53,6 @@ def request_exception_signal_fixture():
         yield signal_calls
     finally:
         request_exception.disconnect(receiver)
-
-
-def do_receive_response(sock, conn):
-    """Same as make response but returns data by frames"""
-    response_headers = {}
-    response_data = []
-    stream_reading = True
-    while stream_reading:
-        data = sock.recv(65536 * 1024)
-        if not data:
-            break
-        data_events = conn.receive_data(data)
-        for event in data_events:
-            if isinstance(event, events.DataReceived):
-                conn.acknowledge_received_data(
-                    event.flow_controlled_length,
-                    event.stream_id)
-                response_data.append(event.data)
-            elif isinstance(event, events.StreamEnded):
-                stream_reading = False
-            elif isinstance(event, events.ResponseReceived):
-                response_headers = event.headers
-        sock.sendall(conn.data_to_send())
-    return response_headers, response_data
 
 
 def test_flow_control_global(app, server_sock):

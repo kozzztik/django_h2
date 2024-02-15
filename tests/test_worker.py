@@ -1,19 +1,15 @@
-import os
 import ssl
 from importlib.resources import files
 import logging
 from unittest import mock
 
-import django
 import pytest
 from django import urls
-from django.conf import ENVIRONMENT_VARIABLE
 from django.http import HttpResponse
 from django.test import override_settings
 
 from django_h2 import signals
 from django_h2.gunicorn.app import DjangoGunicornApp
-from tests import empty_settings
 from tests.utils import WorkerThread
 
 
@@ -27,15 +23,8 @@ class UrlConf:
     ]
 
 
-@pytest.fixture(name="django_config")
-def django_config_fixture():
-    os.environ[ENVIRONMENT_VARIABLE] = empty_settings.__name__
-    django.setup()
-    with override_settings(ROOT_URLCONF=UrlConf):
-        yield
-
-
-def test_worker_init(django_config, server_sock):
+@override_settings(ROOT_URLCONF=UrlConf)
+def test_worker_init(server_sock):
     with mock.patch('sys.argv', ['path']):
         app = DjangoGunicornApp()
 
@@ -50,7 +39,8 @@ def test_worker_init(django_config, server_sock):
     assert response.body == b"{'foo': 'bar'}"
 
 
-def test_worker_ssl(django_config, server_sock):
+@override_settings(ROOT_URLCONF=UrlConf)
+def test_worker_ssl(server_sock):
     crt_file = str(files('django_h2').joinpath('default.crt'))
     with mock.patch('sys.argv', ['path', '--certfile', crt_file]):
         app = DjangoGunicornApp()
@@ -70,7 +60,8 @@ def test_worker_ssl(django_config, server_sock):
     assert response.body == b"{'foo2': 'bar3'}"
 
 
-def test_worker_ssl_min_version(django_config, server_sock):
+@override_settings(ROOT_URLCONF=UrlConf)
+def test_worker_ssl_min_version(server_sock):
     """
     RFC 7540 Section 9.2: Implementations of HTTP/2 MUST use TLS version 1.2
     """
@@ -99,7 +90,8 @@ def test_worker_ssl_min_version(django_config, server_sock):
     assert response.body == b"{'foo4': 'bar5'}"
 
 
-def test_config_post_request_exception(django_config, server_sock):
+@override_settings(ROOT_URLCONF=UrlConf)
+def test_config_post_request_exception(server_sock):
     with mock.patch('sys.argv', ['path']):
         app = DjangoGunicornApp()
 
@@ -122,7 +114,8 @@ def test_config_post_request_exception(django_config, server_sock):
     assert logger_mock.call_args[0][1].args == ('foobar',)
 
 
-def test_keyboard_interrupt(django_config, server_sock):
+@override_settings(ROOT_URLCONF=UrlConf)
+def test_keyboard_interrupt(server_sock):
     with mock.patch('sys.argv', ['path']):
         app = DjangoGunicornApp()
 
@@ -135,7 +128,8 @@ def test_keyboard_interrupt(django_config, server_sock):
         assert thread.worker.loop.is_closed()
 
 
-def test_exceptions_logging(django_config, server_sock):
+@override_settings(ROOT_URLCONF=UrlConf)
+def test_exceptions_logging(server_sock):
     with mock.patch('sys.argv', ['path']):
         app = DjangoGunicornApp()
 
@@ -161,7 +155,8 @@ def test_exceptions_logging(django_config, server_sock):
     assert logger_mock.call_args[0][0].args == ('foobar',)
 
 
-def test_failed_loading_django_with_reload(django_config, server_sock):
+@override_settings(ROOT_URLCONF=UrlConf)
+def test_failed_loading_django_with_reload(server_sock):
     with mock.patch('sys.argv', ['path', '--reload']):
         app = DjangoGunicornApp()
 
@@ -181,7 +176,8 @@ def test_failed_loading_django_with_reload(django_config, server_sock):
     assert logger_mock.call_args[0][0].args == ('foobar',)
 
 
-def test_failed_loading_django_no_reload(django_config, server_sock):
+@override_settings(ROOT_URLCONF=UrlConf)
+def test_failed_loading_django_no_reload(server_sock):
     with mock.patch('sys.argv', ['path']):
         app = DjangoGunicornApp()
 
@@ -197,7 +193,8 @@ def test_failed_loading_django_no_reload(django_config, server_sock):
 @pytest.mark.filterwarnings(
     "ignore:StreamingHttpResponse must consume synchronous iterators")
 @override_settings(STATICFILES_DIRS=[files('django_h2')], STATIC_URL='/static/')
-def test_serving_static(django_config, server_sock):
+@override_settings(ROOT_URLCONF=UrlConf)
+def test_serving_static(server_sock):
     with mock.patch('sys.argv', ['path', '--serve_static']):
         app = DjangoGunicornApp()
 
@@ -223,7 +220,8 @@ def test_serving_static(django_config, server_sock):
 
 
 @override_settings(STATICFILES_DIRS=[files('django_h2')], STATIC_URL='/static/')
-def test_not_serving_static_by_default(django_config, server_sock):
+@override_settings(ROOT_URLCONF=UrlConf)
+def test_not_serving_static_by_default(server_sock):
     with mock.patch('sys.argv', ['path']):
         app = DjangoGunicornApp()
 

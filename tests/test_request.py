@@ -3,17 +3,14 @@ import ssl
 from importlib.resources import files
 from unittest import mock
 
-import django
 import pytest
 from django import urls
-from django.conf import ENVIRONMENT_VARIABLE
 from django.http import HttpResponse, JsonResponse
 from django.test import override_settings
 from django.urls import get_script_prefix
 
 from django_h2.gunicorn.app import DjangoGunicornApp
 from django_h2.request import H2Request
-from tests import empty_settings
 from tests.utils import WorkerThread
 
 
@@ -37,18 +34,11 @@ class UrlConf:
     ]
 
 
-@pytest.fixture(name="django_config")
-def django_config_fixture():
-    os.environ[ENVIRONMENT_VARIABLE] = empty_settings.__name__
-    django.setup()
-    with override_settings(ROOT_URLCONF=UrlConf):
-        yield
-
-
 @pytest.fixture(name="app")
-def app_fixture(django_config):
+def app_fixture():
     with mock.patch('sys.argv', ['path']):
-        yield DjangoGunicornApp()
+        with override_settings(ROOT_URLCONF=UrlConf):
+            yield DjangoGunicornApp()
 
 
 @pytest.fixture(name="thread")
@@ -136,7 +126,8 @@ def test_scheme_http(thread):
     assert response.body == b'http'
 
 
-def test_scheme_https(django_config, server_sock):
+@override_settings(ROOT_URLCONF=UrlConf)
+def test_scheme_https(server_sock):
     crt_file = str(files('django_h2').joinpath('default.crt'))
     with mock.patch('sys.argv', ['path', '--certfile', crt_file]):
         app = DjangoGunicornApp()
@@ -190,7 +181,7 @@ foobar
     assert data == {'uploadedfile': 'foobar'}
 
 
-def test_set_post(django_config):
+def test_set_post():
     request = H2Request(
         mock.MagicMock(),
         [(':method', 'GET'), (':path', '')],

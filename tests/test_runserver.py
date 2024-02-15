@@ -6,16 +6,13 @@ import logging
 import tempfile
 from unittest import mock
 
-import django
 from django import urls
-from django.conf import ENVIRONMENT_VARIABLE
 from django.http import JsonResponse
 from django.core.management import execute_from_command_line
 from django.test import override_settings
 from h2.exceptions import ProtocolError
 import pytest
 
-from tests import empty_settings
 from tests.utils import BaseWorkerThread
 
 
@@ -48,8 +45,6 @@ class UrlConf:
 
 @pytest.fixture(name="django_config")
 def django_config_fixture():
-    os.environ[ENVIRONMENT_VARIABLE] = empty_settings.__name__
-    django.setup()
     with override_settings(
             ROOT_URLCONF=UrlConf,
             STATICFILES_DIRS=[files('django_h2')],

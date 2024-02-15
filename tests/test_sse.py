@@ -1,20 +1,16 @@
 import asyncio
-import os
 from contextlib import aclosing
 from unittest import mock
 
 from h2 import events
-import django
 import pytest
 from django import urls
-from django.conf import ENVIRONMENT_VARIABLE
 from django.test import override_settings
 from django.test.client import AsyncClient
 from django.core.signals import request_finished
 
 from django_h2.gunicorn.app import DjangoGunicornApp
 from django_h2.sse import SSEResponse, Event
-from tests import empty_settings
 from tests.utils import WorkerThread
 
 
@@ -47,22 +43,15 @@ class UrlConf:
     ]
 
 
-@pytest.fixture(name="django_config")
-def django_config_fixture():
-    os.environ[ENVIRONMENT_VARIABLE] = empty_settings.__name__
-    django.setup()
-    with override_settings(ROOT_URLCONF=UrlConf):
-        yield
-
-
 @pytest.fixture(name="app")
-def app_fixture(django_config):
+def app_fixture():
     with mock.patch('sys.argv', ['path']):
-        return DjangoGunicornApp()
+        with override_settings(ROOT_URLCONF=UrlConf):
+            yield DjangoGunicornApp()
 
 
 @pytest.fixture(name="thread")
-def thread_fixture(django_config, server_sock, app):
+def thread_fixture(server_sock, app):
     with WorkerThread(server_sock, app) as thread:
         yield thread
 
@@ -181,7 +170,8 @@ def test_sse_context_closing(
 
 
 @pytest.mark.asyncio
-async def test_django_client(django_config):
+@override_settings(ROOT_URLCONF=UrlConf)
+async def test_django_client():
     client = AsyncClient()
     response = await client.get('/sse/')
     assert response.status_code == 200
