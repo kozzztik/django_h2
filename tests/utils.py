@@ -50,7 +50,7 @@ class BaseWorkerThread(threading.Thread):
     def stop(self):
         self._stopper.set()
 
-    def _on_start(self, sender, **kwargs):
+    def _on_start(self, handler, **kwargs):
         self.started.set()
         loop = asyncio.get_event_loop()
         loop.create_task(self.stopping_task(loop))
@@ -174,6 +174,10 @@ class WorkerThread(BaseWorkerThread):
 
     def get_server_addr(self):
         return self.worker.sockets[0].getsockname()
+
+    def _on_start(self, handler, **kwargs):
+        if handler is self.worker.handler:
+            super()._on_start(handler, **kwargs)
 
 
 def do_receive_response(sock, conn):

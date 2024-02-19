@@ -5,12 +5,13 @@ import sys
 import io
 import traceback
 
+from django.core import signals as dj_signals
 from gunicorn.workers.base import Worker
 from gunicorn.sock import ssl_context as gconf_ssl_context
 
-from django_h2.protocol import Stream
 from django_h2 import handler
 from django_h2.protocol import DjangoH2Protocol
+from django_h2.request import H2Request
 from django_h2.utils import configure_ssl_context
 from django_h2 import signals
 
@@ -49,7 +50,7 @@ class H2Worker(Worker):
                 sock=s,
                 ssl=ssl_context)
             self.servers.append(self.loop.run_until_complete(coro))
-        signals.server_started.send(self.handler)
+        signals.server_started.send(self.__class__, handler=self.handler)
         self.notify_task = self.loop.create_task(self.notify_coro())
 
         try:
@@ -87,8 +88,11 @@ class H2Worker(Worker):
         )
         if self.cfg.serve_static:
             self.handler = handler.StaticHandler(self.handler)
-        signals.pre_request.connect(self.pre_request)
-        signals.post_request.connect(self.post_request)
+        # as django internals like test client use this signal too and not
+        # provide needed context, connect only to handler signals
+        dj_signals.request_started.connect(
+            self.pre_request, self.handler.__class__)
+        signals.request_finished.connect(self.post_request)
         signals.request_exception.connect(self.request_exc)
 
     def get_ssl_context(self):
@@ -98,18 +102,17 @@ class H2Worker(Worker):
         context = configure_ssl_context(context)
         return context
 
-    def pre_request(self, sender: Stream, **_):
-        self.cfg.pre_request(self, sender.request)
+    def pre_request(self, request: H2Request, **_):
+        self.cfg.pre_request(self, request)
 
-    def post_request(self, sender: Stream, response, **_):
+    def post_request(self, request: H2Request, response, **_):
         self.nr += 1
         if self.nr >= self.max_requests and self.alive:
             self.alive = False
             self.log.info("Autorestarting worker after current request.")
             self.handler.graceful_shutdown()
             self.loop.stop()
-        request_time = datetime.now() - sender.start_time
-        request = sender.request
+        request_time = datetime.now() - request.stream.start_time
         # TODO make better logging
         response.status = response.status_code  # wsgi logging compatibility
         try:

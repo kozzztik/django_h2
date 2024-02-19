@@ -137,7 +137,7 @@ def test_exceptions_logging(server_sock):
     def failing_receiver(*args, **kwargs):
         raise ValueError("foobar")
 
-    signals.post_request.connect(failing_receiver)
+    signals.request_finished.connect(failing_receiver)
     try:
         with mock.patch.object(app.logger, "exception") as logger_mock:
             with WorkerThread(server_sock, app) as thread:
@@ -148,7 +148,7 @@ def test_exceptions_logging(server_sock):
                     (':path', '/ping/?foo=bar')]
                 )
     finally:
-        signals.post_request.disconnect(failing_receiver)
+        signals.request_finished.disconnect(failing_receiver)
     assert response.status_code == 200
     assert response.body == b"{'foo': 'bar'}"
     assert logger_mock.called
@@ -207,7 +207,8 @@ def test_serving_static(server_sock):
             (':path', '/static/default.crt')]
         )
         assert response.status_code == 200
-        assert response['content-disposition'] == 'inline; filename="default.crt"'
+        assert response['content-disposition'] == \
+            'inline; filename="default.crt"'
         assert len(response.body) > 0
         # app still works
         response = thread.make_request([

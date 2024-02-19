@@ -8,9 +8,10 @@ from django.core.management.commands import runserver as dj_runserver
 from django.conf import settings
 from django.http import HttpResponse
 
+from django_h2.request import H2Request
 from django_h2.handler import H2Handler, StaticHandler
 from django_h2.utils import configure_ssl_context
-from django_h2.protocol import Stream, DjangoH2Protocol
+from django_h2.protocol import DjangoH2Protocol
 from django_h2 import signals
 
 logger = logging.getLogger('django.server')
@@ -34,7 +35,7 @@ class H2ManagementRunServer:
         asyncio.set_event_loop(loop)
         ssl_ctx = self.get_ssl_context()
         self.handler = StaticHandler(H2Handler(loop, max_workers=1))
-        signals.post_request.connect(log_response)
+        signals.request_finished.connect(log_response)
         signals.request_exception.connect(log_exception)
         coro = loop.create_server(
             self.protocol_factory,
@@ -43,7 +44,7 @@ class H2ManagementRunServer:
             family=socket.AF_INET6 if self.ipv6 else socket.AF_UNSPEC,
             ssl=ssl_ctx)
         server = loop.run_until_complete(coro)
-        signals.server_started.send(self.handler)
+        signals.server_started.send(self.__class__, handler=self.handler)
 
         # Serve requests until Ctrl+C is pressed
         try:
@@ -55,7 +56,7 @@ class H2ManagementRunServer:
         server.close()
         loop.run_until_complete(server.wait_closed())
         loop.close()
-        signals.post_request.disconnect(log_response)
+        signals.request_finished.disconnect(log_response)
         signals.request_exception.disconnect(log_exception)
 
     @staticmethod
@@ -88,9 +89,9 @@ monthname = [None,
              'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 
-def log_response(sender: Stream, response: HttpResponse, **_):
+def log_response(request: H2Request, response: HttpResponse, **_):
     extra = {
-        "request": sender.request,
+        "request": request,
         "server_time": log_date_time_string(),
         "status_code": response.status_code
     }
@@ -102,21 +103,20 @@ def log_response(sender: Stream, response: HttpResponse, **_):
         level = logger.info
     level(
         "%s %s %s %s",
-        sender.request.path, "HTTP/2",
-        response.status_code, sender.bytes_send,
+        request.path, "HTTP/2",
+        response.status_code, request.stream.bytes_send,
         extra=extra)
 
 
-def log_exception(sender: Stream, exc, **_):
-    extra = {
-        "request": sender.request,
-        "server_time": log_date_time_string(),
-        "status_code": 500
-    }
+def log_exception(request: H2Request, exc: BaseException, **_):
     logger.exception(
-        "%s %s %s %s",
-        sender.request.path, "HTTP/2", 500, str(exc),
-        extra=extra)
+        "%s %s %s %s",request.path, "HTTP/2", 500, str(exc),
+        extra={
+            "request": request,
+            "server_time": log_date_time_string(),
+            "status_code": 500
+        }
+    )
 
 
 def patch():

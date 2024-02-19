@@ -37,13 +37,13 @@ def post_request_signal_fixture():
         signal_calls.append(kwargs)
 
     # pylint: disable=import-outside-toplevel
-    from django_h2.signals import post_request
+    from django_h2.signals import request_finished
 
-    post_request.connect(receiver)
+    request_finished.connect(receiver)
     try:
         yield signal_calls
     finally:
-        post_request.disconnect(receiver)
+        request_finished.disconnect(receiver)
 
 
 @pytest.hookimpl(trylast=True)
@@ -69,6 +69,7 @@ def pytest_sessionstart(session):
     os.geteuid = mock.MagicMock()
     os.getegid = mock.MagicMock()
     os.chown = mock.MagicMock()
+    os.fchmod = mock.MagicMock()
     # pylint: disable=import-outside-toplevel
     from gunicorn.workers import workertmp
     workertmp.IS_CYGWIN = True

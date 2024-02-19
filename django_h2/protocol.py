@@ -39,7 +39,8 @@ class Stream(BaseStream):
             self.task.cancel()
             self.task = None
         if exc:
-            signals.request_exception.send(self, exc=exc)
+            signals.request_exception.send(
+                self.__class__, request=self.request, exc=exc)
         super().close()
 
     def __await__(self):
@@ -66,23 +67,25 @@ class Stream(BaseStream):
 
     async def handle_task(self):
         try:
-            signals.pre_request.send(self)
             try:
                 response = await self.protocol.handler.handle_request(
                     self.request)
             except Exception as e:
-                signals.request_exception.send(self, exc=e)
+                signals.request_exception.send(
+                    self.__class__, request=self.request, exc=e)
                 response = HttpResponse(
                     status=500, content=repr(e).encode('utf-8'))
             try:
                 await self.send_response(response)
             finally:
-                signals.post_request.send(self, response=response)
+                signals.request_finished.send(
+                    self.__class__, request=self.request, response=response)
         except asyncio.CancelledError:
             raise  # so asyncio know that context closed correctly
         except BaseException as e:
             # do not raise and log
-            signals.request_exception.send(self, exc=e)
+            signals.request_exception.send(
+                self.__class__, request=self.request, exc=e)
         finally:
             self.close()
 
