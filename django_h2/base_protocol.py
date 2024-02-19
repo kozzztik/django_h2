@@ -42,9 +42,8 @@ class BaseH2Protocol(asyncio.Protocol):
         self.transport.write(self.conn.data_to_send())
 
     def connection_lost(self, exc):
-        for stream in self.streams.values():
-            stream.close(exc)
-        self.streams = {}
+        while self.streams:
+            self.streams.popitem()[1].close(exc)
 
     def data_received(self, data: bytes):
         try:
@@ -69,7 +68,7 @@ class BaseH2Protocol(asyncio.Protocol):
                     self.window_updated(event.stream_id, event.delta)
                 elif isinstance(event, RemoteSettingsChanged):
                     if SettingCodes.INITIAL_WINDOW_SIZE in event.changed_settings:
-                        self.window_updated(None, 0)
+                        self.window_updated(0, 0)
 
                 self.transport.write(self.conn.data_to_send())
 
@@ -83,12 +82,13 @@ class BaseH2Protocol(asyncio.Protocol):
             return  # Just return, we probably 405'd this already
 
     def receive_data(self, data: bytes, stream_id: int):
-        try:
-            self.streams[stream_id].event_receive_data(data)
-        except KeyError:
-            self.conn.reset_stream(
-                stream_id, error_code=ErrorCodes.PROTOCOL_ERROR
-            )
+        if data:
+            try:
+                self.streams[stream_id].event_receive_data(data)
+            except KeyError:
+                self.conn.reset_stream(
+                    stream_id, error_code=ErrorCodes.PROTOCOL_ERROR
+                )
 
     def stream_reset(self, stream_id: int):
         """
@@ -135,20 +135,23 @@ class BaseStream:
         self.start_time = datetime.datetime.now()
         self.transport = protocol.transport
 
+    def __repr__(self):
+        return f'{self.__class__.__name__}: {self.stream_id}'
+
     def end_stream(self):
+        """ Send end stream frame if not already sent """
         if (self.stream_id in self.conn.streams and
                 self.conn.streams[self.stream_id].state_machine.state not in
                 (StreamState.HALF_CLOSED_LOCAL, StreamState.CLOSED)):
             self.conn.end_stream(self.stream_id)
             self.transport.write(self.conn.data_to_send())
-        self.close()  # TODO task sending data coming here and close itself
-        # TODO check that it is not done by events
-        # self.protocol.streams.pop(self.stream_id)
 
     def close(self, exc=None):
         if self._flow_control_future:
             self._flow_control_future.cancel()
             self._flow_control_future = None
+        self.end_stream()
+        self.protocol.streams.pop(self.stream_id, None)
 
     async def wait_for_flow_control(self) -> int:
         while True:

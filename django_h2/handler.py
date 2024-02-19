@@ -15,9 +15,19 @@ from django_h2.request import H2Request
 logger = logging.getLogger("django.request")
 
 
-class H2Handler(BaseHandler):
-    request_class = H2Request
+class AbstractHandler:
+    def __init__(self):
+        self.connections = set()
 
+    def graceful_shutdown(self):
+        for conn in self.connections:
+            conn.graceful_shutdown()
+
+    async def handle_request(self, request: H2Request) -> HttpResponse:
+        raise NotImplementedError()
+
+
+class H2Handler(BaseHandler, AbstractHandler):
     def __init__(self, loop, root_path="", max_workers=None):
         self.loop = loop
         self.root_path = root_path
@@ -25,6 +35,7 @@ class H2Handler(BaseHandler):
             self.root_path = settings.FORCE_SCRIPT_NAME
         self.thread_pool = ThreadPoolExecutor(max_workers=max_workers)
         self.load_middleware(False)
+        super().__init__()
 
     def _inner_handle_request(self, request: H2Request) -> HttpResponse:
         # Request is complete and can be served.
@@ -43,10 +54,11 @@ class H2Handler(BaseHandler):
         )
 
 
-class StaticHandler(StaticFilesHandlerMixin):
+class StaticHandler(StaticFilesHandlerMixin, AbstractHandler):
     def __init__(self, handler: H2Handler):
         self.handler = handler
         self.base_url = urlparse(self.get_base_url())
+        super().__init__()
 
     async def handle_request(self, request: H2Request):
         if self._should_handle(request.path):
@@ -54,9 +66,10 @@ class StaticHandler(StaticFilesHandlerMixin):
         return await self.handler.handle_request(request)
 
 
-class FallbackHandler:
+class FallbackHandler(AbstractHandler):
     def __init__(self, error_message: str):
         self.error_message = error_message.encode("utf-8")
+        super().__init__()
 
     async def handle_request(self, request: H2Request) -> HttpResponse:
         return HttpResponse(

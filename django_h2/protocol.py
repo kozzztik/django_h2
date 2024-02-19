@@ -4,6 +4,7 @@ from contextlib import aclosing
 from typing import List, Tuple
 
 from h2.errors import ErrorCodes
+from hyperframe.frame import GoAwayFrame
 from django.conf import settings
 from django.http import HttpResponse
 
@@ -16,6 +17,8 @@ class Stream(BaseStream):
     request: H2Request
     task: asyncio.Task | None = None
     bytes_received = 0
+    streaming = False
+    _close_waiter: asyncio.Future | None = None
 
     def __init__(
             self,
@@ -26,14 +29,22 @@ class Stream(BaseStream):
         self.request = H2Request(self, headers, self.protocol.root_path)
         self._max_request_size = settings.FILE_UPLOAD_MAX_MEMORY_SIZE
         self.request_body = io.BytesIO()
+        signals.stream_started.send(self.__class__, stream=self)
 
     def close(self, exc=None):
+        if self._close_waiter:
+            self._close_waiter.set_result(self)
+            self._close_waiter = None
         if self.task and not self.task.done():
             self.task.cancel()
             self.task = None
         if exc:
             signals.request_exception.send(self, exc=exc)
         super().close()
+
+    def __await__(self):
+        self._close_waiter = asyncio.Future()
+        return self._close_waiter.__await__()
 
     def event_receive_data(self, data: bytes):
         if self.bytes_received + len(data) > self._max_request_size:
@@ -66,9 +77,8 @@ class Stream(BaseStream):
         except BaseException as e:
             # do not raise and log
             signals.request_exception.send(self, exc=e)
-            # TODO close here with exception?
         finally:
-            self.end_stream()
+            self.close()
 
     async def send_response(self, response: HttpResponse):
         response_headers = [
@@ -84,13 +94,15 @@ class Stream(BaseStream):
             self.send_headers(response_headers)
             # Streaming responses need to be pinned to their iterator.
             if response.streaming:
-                # - Consume via `__aiter__` and not `streaming_content`
-                #   directly, to allow mapping of a sync iterator.
-                # - Use aclosing() when consuming aiter.
-                #   See https://github.com/python/cpython/commit/6e8dcda
-                async with aclosing(aiter(response)) as content:
-                    async for part in content:
-                        await self.send_data(part, end_stream=False)
+                self.streaming = True
+                if self.protocol.alive:
+                    # - Consume via `__aiter__` and not `streaming_content`
+                    #   directly, to allow mapping of a sync iterator.
+                    # - Use aclosing() when consuming aiter.
+                    #   See https://github.com/python/cpython/commit/6e8dcda
+                    async with aclosing(aiter(response)) as content:
+                        async for part in content:
+                            await self.send_data(part, end_stream=False)
                 self.end_stream()
             else:
                 await self.send_data(response.content, end_stream=True)
@@ -109,3 +121,36 @@ class DjangoH2Protocol(BaseH2Protocol):
         self.conn.local_settings.initial_window_size = (
             settings.FILE_UPLOAD_MAX_MEMORY_SIZE)
         self.conn.local_settings.acknowledge()
+        handler.connections.add(self)
+        self.alive = True
+
+    def connection_lost(self, exc):
+        super().connection_lost(exc)
+        self.handler.connections.remove(self)
+
+    def graceful_shutdown(self):
+        last_stream_id = self.conn.highest_inbound_stream_id
+        # send go away frame directly, as h2 on "close connection" changes its
+        # state to "closed" where data can't be sent on already opened streams
+        f = GoAwayFrame(stream_id=0, last_stream_id=last_stream_id)
+        self.transport.write(f.serialize())
+        self.alive = False
+        # build a list to avoid "dict values changed" while iterating
+        for stream in [s for s in self.streams.values() if s.streaming]:
+            stream.close()
+        # this task will close connection after all streams finish
+        asyncio.create_task(self.wait_shutdown())
+
+    async def wait_shutdown(self):
+        while self.streams:
+            # wait first stream in list. Wait next one on next while iteration
+            await next(iter(self.streams.values()))
+        self.transport.close()
+
+    def request_received(self, headers: List[Tuple[str, str]], stream_id: int):
+        # RFC 7540 6.8 https://httpwg.org/specs/rfc7540.html#GOAWAY
+        # Once (GoAway) sent, the sender will ignore frames sent on streams
+        # initiated by the receiver if the stream has an identifier higher
+        # than the included last stream identifier.
+        if self.alive:
+            super().request_received(headers, stream_id)

@@ -11,7 +11,7 @@ from h2.exceptions import ProtocolError, StreamClosedError
 
 from django_h2.base_protocol import BaseH2Protocol, BaseStream
 from django_h2.gunicorn.app import DjangoGunicornApp
-from django_h2.signals import request_exception
+from django_h2.signals import request_exception, stream_started
 from tests.utils import WorkerThread, do_receive_response
 
 
@@ -58,8 +58,6 @@ def request_exception_signal_fixture():
 def test_flow_control_global(app, server_sock):
     with WorkerThread(server_sock, app) as thread:
         sock, conn = thread.connect()
-        conn.update_settings({SettingCodes.INITIAL_WINDOW_SIZE: 2})
-        sock.sendall(conn.data_to_send())
         stream_id = conn.get_next_available_stream_id()
         conn.send_headers(
             stream_id,
@@ -69,8 +67,12 @@ def test_flow_control_global(app, server_sock):
                 (':method', 'GET'),
                 (':path', '/ping/?foo5=bar6')
             ],
-            end_stream=True
+            end_stream=False
         )
+        sock.sendall(conn.data_to_send())
+        wait_conn_processed(sock, conn)
+        conn.update_settings({SettingCodes.INITIAL_WINDOW_SIZE: 2})
+        conn.end_stream(stream_id)
         sock.sendall(conn.data_to_send())
         response_headers, response_data = do_receive_response(sock, conn)
     assert response_headers == [
@@ -114,12 +116,15 @@ def wait_conn_processed(sock, conn):
     """ wait worker to process headers and create stream """
     f = threading.Event()
 
-    def on_init(*args, **kwargs):
+    def on_start(sender, **kwargs):
         f.set()
 
-    with mock.patch('django_h2.request.H2Request.__init__', on_init):
+    stream_started.connect(on_start)
+    try:
         sock.sendall(conn.data_to_send())
         f.wait()
+    finally:
+        stream_started.disconnect(on_start)
 
 
 def test_connection_lost(app, server_sock, request_exception_signal):
@@ -264,24 +269,24 @@ def test_disconnect_under_flow_control(app, server_sock, post_request_signal):
     assert post_request_signal[0]['sender']._flow_control_future is None
 
 
-@pytest.mark.parametrize('exc', (ProtocolError, StreamClosedError))
+@pytest.mark.parametrize('exc', (ProtocolError, StreamClosedError(1)))
 def test_sending_protocol_error(
-        app, server_sock, request_exception_signal, exc):
-    with mock.patch('django_h2.protocol.Stream.close') as close_mock:
-        with mock.patch(
-                'h2.connection.H2Connection.send_data',
-                side_effect=exc) as send_mock:
-            with WorkerThread(server_sock, app) as thread:
-                resp = thread.make_request([
-                    (':authority', '127.0.0.1'),
-                    (':scheme', 'http'),
-                    (':method', 'GET'),
-                    (':path', '/ping/?foo5=bar6')
-                ])
+        app, server_sock, request_exception_signal, exc, post_request_signal):
+    with mock.patch(
+            'h2.connection.H2Connection.send_data',
+            side_effect=exc) as send_mock:
+        with WorkerThread(server_sock, app) as thread:
+            resp = thread.make_request([
+                (':authority', '127.0.0.1'),
+                (':scheme', 'http'),
+                (':method', 'GET'),
+                (':path', '/ping/?foo5=bar6')
+            ])
     assert send_mock.called
-    assert close_mock.called
     assert resp.status_code == 200
     assert resp.body == b''  # body is not send, but headers are ok
+    assert len(request_exception_signal) == 0
+    assert len(post_request_signal) == 1
 
 
 def test_empty_body_response(app, server_sock):
@@ -488,7 +493,7 @@ def test_async_stream_calls():
     protocol = BaseH2Protocol()
     protocol.conn = mock.MagicMock()
     protocol.stream_complete(100)
-    protocol.receive_data(b'',100)
+    protocol.receive_data(b'11',100)
     assert protocol.conn.reset_stream.called
     protocol.stream_reset(100)
     protocol.window_updated(100, 0)
@@ -501,3 +506,9 @@ def test_not_implemented():
         stream.event_stream_complete()
     with pytest.raises(NotImplementedError):
         stream.event_receive_data(b'')
+
+
+def test_stream_repr():
+    """ Stream have readable representation for debug """
+    stream = BaseStream(mock.MagicMock(), 1, [])
+    assert repr(stream) == 'BaseStream: 1'

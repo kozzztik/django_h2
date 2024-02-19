@@ -15,11 +15,13 @@ from django_h2.utils import configure_ssl_context
 from django_h2 import signals
 
 
-class H2Worker(Worker):  # TODO max requests
+class H2Worker(Worker):
     handler = None
     loop: asyncio.AbstractEventLoop = None
     script_name = ''
     protocol_logger = None
+    servers = None
+    notify_task = None
 
     def protocol_factory(self):
         return DjangoH2Protocol(
@@ -28,31 +30,37 @@ class H2Worker(Worker):  # TODO max requests
             root_path=self.script_name
         )
 
+    def close(self):
+        if self.notify_task and not self.notify_task.done():
+            self.notify_task.cancel()
+            self.notify_task = None
+        if self.servers is not None:
+            for server in self.servers:
+                server.close()
+                self.loop.run_until_complete(server.wait_closed())
+            self.servers = None
+
     def run(self):
-        servers = []
+        self.servers = []
         ssl_context = self.get_ssl_context()
         for s in self.sockets:
             coro = self.loop.create_server(
                 self.protocol_factory,
                 sock=s,
                 ssl=ssl_context)
-            servers.append(self.loop.run_until_complete(coro))
+            self.servers.append(self.loop.run_until_complete(coro))
         signals.server_started.send(self.handler)
-        notify_task = self.loop.create_task(self.notify_task())
+        self.notify_task = self.loop.create_task(self.notify_coro())
 
         try:
             self.loop.run_forever()
         except KeyboardInterrupt:
             pass
+        finally:
+            self.close()
+            self.loop.close()
 
-        notify_task.cancel()
-        # Close the server
-        for server in servers:
-            server.close()
-            self.loop.run_until_complete(server.wait_closed())
-        self.loop.close()
-
-    async def notify_task(self):
+    async def notify_coro(self):
         while True:
             self.notify()
             await asyncio.sleep(1)
@@ -94,6 +102,12 @@ class H2Worker(Worker):  # TODO max requests
         self.cfg.pre_request(self, sender.request)
 
     def post_request(self, sender: Stream, response, **_):
+        self.nr += 1
+        if self.nr >= self.max_requests and self.alive:
+            self.alive = False
+            self.log.info("Autorestarting worker after current request.")
+            self.handler.graceful_shutdown()
+            self.loop.stop()
         request_time = datetime.now() - sender.start_time
         request = sender.request
         # TODO make better logging

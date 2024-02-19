@@ -70,8 +70,6 @@ class H2ManagementRunServer:
             if not crt_file:
                 crt_file = str(files('django_h2').joinpath('default.crt'))
             ctx.load_cert_chain(certfile=crt_file)
-        # TODO
-        # ctx.load_verify_locations(cafile='server_ca.pem')
         return ctx
 
 
