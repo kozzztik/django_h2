@@ -2,7 +2,6 @@ import asyncio
 from contextlib import aclosing
 from unittest import mock
 
-from h2 import events
 import pytest
 from django import urls
 from django.test import override_settings
@@ -11,7 +10,7 @@ from django.core.signals import request_finished
 
 from django_h2.gunicorn.app import DjangoGunicornApp
 from django_h2.sse import SSEResponse, Event
-from tests.utils import WorkerThread
+from tests.utils import WorkerThread, read_events
 
 
 async def single_event():
@@ -85,31 +84,6 @@ def test_single_event(thread):
     assert response.body == b'event: foo\ndata: bar\n\n'
 
 
-def read_two_events(sock, conn):
-    response_headers = {}
-    response_data = []
-    stream_reading = True
-    while stream_reading:
-        data = sock.recv(65536 * 1024)
-        if not data:
-            break
-        data_events = conn.receive_data(data)
-        for event in data_events:
-            if isinstance(event, events.DataReceived):
-                conn.acknowledge_received_data(
-                    event.flow_controlled_length,
-                    event.stream_id)
-                response_data.append(event.data)
-                if len(response_data) >= 2:
-                    stream_reading = False
-            elif isinstance(event, events.StreamEnded):
-                stream_reading = False
-            elif isinstance(event, events.ResponseReceived):
-                response_headers = dict(event.headers)
-        sock.sendall(conn.data_to_send())
-    return response_headers, response_data
-
-
 def test_sse_streaming(thread):
     sock, conn = thread.connect()
     stream_id = conn.get_next_available_stream_id()
@@ -123,7 +97,7 @@ def test_sse_streaming(thread):
         ],
         end_stream=True
     )
-    response_headers, response_data = read_two_events(sock, conn)
+    response_headers, response_data = read_events(sock, conn, 2)
     assert response_headers == {
         b':status': b'200',
         b'cache-control': b'no-cache',
@@ -153,7 +127,7 @@ def test_sse_context_closing(
             ],
             end_stream=True
         )
-        response_headers, response_data = read_two_events(sock, conn)
+        response_headers, response_data = read_events(sock, conn, 2)
     assert response_headers == {
         b':status': b'200',
         b'cache-control': b'no-cache',

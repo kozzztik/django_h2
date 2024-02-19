@@ -198,3 +198,28 @@ def do_receive_response(sock, conn):
                 response_headers = event.headers
         sock.sendall(conn.data_to_send())
     return response_headers, response_data
+
+
+def read_events(sock, conn, count):
+    response_headers = {}
+    response_data = []
+    stream_reading = True
+    while stream_reading:
+        data = sock.recv(65536 * 1024)
+        if not data:
+            break
+        data_events = conn.receive_data(data)
+        for event in data_events:
+            if isinstance(event, h2.events.DataReceived):
+                conn.acknowledge_received_data(
+                    event.flow_controlled_length,
+                    event.stream_id)
+                response_data.append(event.data)
+                if len(response_data) >= count:
+                    stream_reading = False
+            elif isinstance(event, h2.events.StreamEnded):
+                stream_reading = False
+            elif isinstance(event, h2.events.ResponseReceived):
+                response_headers = dict(event.headers)
+        sock.sendall(conn.data_to_send())
+    return response_headers, response_data

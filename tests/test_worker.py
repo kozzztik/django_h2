@@ -10,6 +10,7 @@ from django.test import override_settings
 
 from django_h2 import signals
 from django_h2.gunicorn.app import DjangoGunicornApp
+from django_h2.handler import AbstractHandler
 from tests.utils import WorkerThread
 
 
@@ -233,3 +234,10 @@ def test_not_serving_static_by_default(server_sock):
             (':path', '/static/default.crt')]
         )
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_abstract_handler_not_implemented():
+    handler = AbstractHandler()
+    with pytest.raises(NotImplementedError):
+        await handler.handle_request(None)

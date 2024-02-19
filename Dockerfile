@@ -1,12 +1,12 @@
-FROM python:3.11
+FROM python:3.12
 ENV PYTHONUNBUFFERED 1
 ENV PYTHONASYNCIODEBUG 1
 RUN apt-get update
 RUN apt-get -y install python3-openssl
 # for better caching
 ## install requirements, so they can be cached by Docker
-RUN pip install django==5.0.2 h2==4.1.0 gunicorn==21.2.0 pytest==7.2.1 \
-    pytest-cov==4.0.0 pylint==2.16.1 billiard==4.1.0 pycodestyle==2.8.0 \
+RUN pip install django==5.0.2 h2==4.1.0 gunicorn==21.2.0 pytest==8.0.0 \
+    pytest-cov==4.0.0 pylint==3.0.3 billiard==4.1.0 pycodestyle==2.8.0 \
     flake8==4.0.1 pytest-flake8==1.1.1 coverage==6.5.0 coveralls==3.3.1 \
     pytest-asyncio==0.23.5 pyopenssl==24.0.0
 
