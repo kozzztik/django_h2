@@ -67,7 +67,13 @@ class Stream(BaseStream):
     async def handle_task(self):
         try:
             signals.pre_request.send(self)
-            response = await self.protocol.handler.handle_request(self.request)
+            try:
+                response = await self.protocol.handler.handle_request(
+                    self.request)
+            except Exception as e:
+                signals.request_exception.send(self, exc=e)
+                response = HttpResponse(
+                    status=500, content=repr(e).encode('utf-8'))
             try:
                 await self.send_response(response)
             finally:

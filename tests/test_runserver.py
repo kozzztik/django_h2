@@ -10,7 +10,6 @@ from django import urls
 from django.http import JsonResponse
 from django.core.management import execute_from_command_line
 from django.test import override_settings
-from h2.exceptions import ProtocolError
 import pytest
 
 from tests.utils import BaseWorkerThread
@@ -132,13 +131,14 @@ def test_handler_exception(django_config, server_port, ssl_context):
                 'django_h2.handler.H2Handler.handle_request',
                 side_effect=ValueError()) as handler_mock:
             with mock.patch.object(logger, 'error') as error_mock:
-                with pytest.raises(ProtocolError):  # TODO better get 500 here
-                    thread.make_request([
-                        (':authority', '127.0.0.1'),
-                        (':scheme', 'https'),
-                        (':method', 'GET'),
-                        (':path', '/ping/?foo=bar'),
-                    ])
+                response = thread.make_request([
+                    (':authority', '127.0.0.1'),
+                    (':scheme', 'https'),
+                    (':method', 'GET'),
+                    (':path', '/ping/?foo=bar'),
+                ])
+    assert response.status_code == 500
+    assert response.body == b'ValueError()'
     assert handler_mock.called
     assert error_mock.called
     assert len(error_mock.call_args.args) == 5
