@@ -113,13 +113,14 @@ class H2Worker(Worker):
             self.handler.graceful_shutdown()
             self.loop.stop()
         request_time = datetime.now() - request.stream.start_time
-        # TODO make better logging
-        response.status = response.status_code  # wsgi logging compatibility
+        # wsgi logging compatibility
+        response.status = response.status_code
+        response.sent = request.stream.bytes_sent
         try:
             self.log.access(response, request, request.META, request_time)
             self.cfg.post_request(self, request, request.META, response)
         except Exception as exc:
             self.log.exception("Exception in post_request hook %s", exc)
 
-    def request_exc(self, sender, exc, **_):
+    def request_exc(self, exc, **_):
         self.log.exception(exc)

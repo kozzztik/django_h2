@@ -116,7 +116,7 @@ class BaseH2Protocol(asyncio.Protocol):
 
 class BaseStream:
     stream_id: int = None
-    bytes_send = 0
+    bytes_sent = 0
     start_time: datetime.datetime = None
     protocol: BaseH2Protocol = None
     conn: H2Connection = None
@@ -189,7 +189,7 @@ class BaseStream:
 
             self.transport.write(self.conn.data_to_send())
             data = data[chunk_size:]
-            self.bytes_send += chunk_size
+            self.bytes_sent += chunk_size
 
     def event_window_updated(self, delta: int):
         """

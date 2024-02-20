@@ -104,7 +104,7 @@ def log_response(request: H2Request, response: HttpResponse, **_):
     level(
         "%s %s %s %s",
         request.path, "HTTP/2",
-        response.status_code, request.stream.bytes_send,
+        response.status_code, request.stream.bytes_sent,
         extra=extra)
 
 
