@@ -20,7 +20,7 @@ def files_view(request):
     })
 
 
-class UrlConf:
+class UrlConf:  # pylint: disable=too-few-public-methods
     urlpatterns = [
         urls.re_path(r'^ping/$', lambda x: JsonResponse(dict(x.GET))),
         urls.re_path(

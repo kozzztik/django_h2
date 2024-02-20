@@ -43,6 +43,7 @@ class H2Handler(BaseHandler, AbstractHandler):
         signals.request_started.send(
             sender=self.__class__, environ=request.META, request=request)
         response = self.get_response(request)
+        # pylint: disable=protected-access
         response._handler_class = self.__class__
         return response
 

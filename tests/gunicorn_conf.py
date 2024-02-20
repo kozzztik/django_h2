@@ -1,1 +1,1 @@
-loglevel='debug'
+loglevel='debug'  # pylint: disable=invalid-name

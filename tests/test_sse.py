@@ -33,7 +33,7 @@ async def context_source():
             await asyncio.sleep(0.1)
 
 
-class UrlConf:
+class UrlConf:  # pylint: disable=too-few-public-methods
     urlpatterns = [
         urls.re_path(r'^single/$', lambda x: SSEResponse(single_event())),
         urls.re_path(r'^sse/$', lambda x: SSEResponse(

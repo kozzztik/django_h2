@@ -26,7 +26,7 @@ def cookie_view(request):
     return response
 
 
-class UrlConf:
+class UrlConf:  # pylint: disable=too-few-public-methods
     urlpatterns = [
         urls.re_path(r'^ping/$', ping_view),
         urls.re_path(r'^empty/$', lambda x: HttpResponse()),
@@ -116,7 +116,7 @@ def wait_conn_processed(sock, conn):
     """ wait worker to process headers and create stream """
     f = threading.Event()
 
-    def on_start(sender, **kwargs):
+    def on_start(**_):
         f.set()
 
     stream_started.connect(on_start)
@@ -266,6 +266,7 @@ def test_disconnect_under_flow_control(app, server_sock, post_request_signal):
     assert response_data == [b"{'", b'fo']
     assert post_request_signal
     # flow control correctly closed
+    # pylint: disable=protected-access
     assert post_request_signal[0]['sender']._flow_control_future is None
 
 

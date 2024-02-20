@@ -47,7 +47,7 @@ def post_request_signal_fixture():
 
 
 @pytest.hookimpl(trylast=True)
-def pytest_sessionstart(session):
+def pytest_sessionstart():
     os.environ[ENVIRONMENT_VARIABLE] = empty_settings.__name__
     django.setup()
     # for testing under windows

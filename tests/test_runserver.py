@@ -34,7 +34,7 @@ def error_view(*args):
     raise ValueError('foo')
 
 
-class UrlConf:
+class UrlConf:  # pylint: disable=too-few-public-methods
     urlpatterns = [
         urls.re_path(r'^ping/$', lambda x: JsonResponse(dict(x.GET))),
         urls.re_path(r'^error/$', error_view),

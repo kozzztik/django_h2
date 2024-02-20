@@ -18,7 +18,7 @@ def ping_view(request):
     return HttpResponse(str(dict(request.GET.items())).encode("utf-8"))
 
 
-class UrlConf:
+class UrlConf:  # pylint: disable=too-few-public-methods
     urlpatterns = [
         urls.re_path(r'^ping/$', ping_view),
     ]

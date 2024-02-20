@@ -98,7 +98,7 @@ class H2Request(HttpRequest):
         self._body = body.read()
 
     # Triggers that on base init is overriden, but it is not called
-    # pylint: disable=method-hidden
+    # pylint: disable=method-hidden,invalid-name
     @cached_property
     def GET(self):
         return QueryDict(self.META["QUERY_STRING"])

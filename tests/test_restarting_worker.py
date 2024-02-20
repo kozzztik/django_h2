@@ -15,6 +15,7 @@ from tests.utils import WorkerThread, do_receive_response, read_events
 
 
 # Fix H2 Client that not understands GoAway frame as graceful shutdown
+# pylint: disable=protected-access
 transitions = H2ConnectionStateMachine._transitions
 
 
@@ -60,7 +61,7 @@ async def events_source():
         await asyncio.sleep(0.1)
 
 
-class UrlConf:
+class UrlConf:  # pylint: disable=too-few-public-methods
     urlpatterns = [
         urls.re_path(r'^blocked_view/$', blocked_view),
         urls.re_path(r'^fast_view/$', fast_view),
