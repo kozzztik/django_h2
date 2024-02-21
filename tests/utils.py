@@ -143,7 +143,8 @@ class BaseWorkerThread(threading.Thread):
                         event.stream_id)
                     # more response body data received
                     resp.body += event.data
-                elif isinstance(event, h2.events.StreamEnded):
+                elif isinstance(
+                        event, (h2.events.StreamEnded, h2.events.StreamReset)):
                     # response body completed, let's exit the loop
                     response_stream_ended = True
                     break

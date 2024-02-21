@@ -151,9 +151,7 @@ def test_exceptions_logging(server_sock):
         signals.request_finished.disconnect(failing_receiver)
     assert response.status_code == 200
     assert response.body == b"{'foo': 'bar'}"
-    assert logger_mock.called
-    assert isinstance(logger_mock.call_args[0][0], ValueError)
-    assert logger_mock.call_args[0][0].args == ('foobar',)
+    assert logger_mock.called is False
 
 
 @override_settings(ROOT_URLCONF=UrlConf)
@@ -241,4 +239,4 @@ def test_not_serving_static_by_default(server_sock):
 async def test_abstract_handler_not_implemented():
     handler = AbstractHandler()
     with pytest.raises(NotImplementedError):
-        await handler.handle_request(None)
+        await handler.handle_request(None, None)

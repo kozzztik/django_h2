@@ -137,8 +137,8 @@ def test_handler_exception(django_config, server_port, ssl_context):
                     (':method', 'GET'),
                     (':path', '/ping/?foo=bar'),
                 ])
-    assert response.status_code == 500
-    assert response.body == b'ValueError()'
+    assert response.status_code is None
+    assert response.body == b''
     assert handler_mock.called
     assert error_mock.called
     assert len(error_mock.call_args.args) == 5

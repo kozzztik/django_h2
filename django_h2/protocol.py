@@ -67,19 +67,8 @@ class Stream(BaseStream):
 
     async def handle_task(self):
         try:
-            try:
-                response = await self.protocol.handler.handle_request(
-                    self.request)
-            except Exception as e:
-                signals.request_exception.send(
-                    self.__class__, request=self.request, exc=e)
-                response = HttpResponse(
-                    status=500, content=repr(e).encode('utf-8'))
-            try:
-                await self.send_response(response)
-            finally:
-                signals.request_finished.send(
-                    self.__class__, request=self.request, response=response)
+            await self.protocol.handler.handle_request(
+                self.request, self.send_response)
         except asyncio.CancelledError:
             raise  # so asyncio know that context closed correctly
         except BaseException as e:
@@ -99,11 +88,11 @@ class Stream(BaseStream):
         # However, H2 will normalize it anyway.
         for c in response.cookies.values():
             response_headers.append(("Set-Cookie", c.output(header="")))
-        try:
-            self.send_headers(response_headers)
-            # Streaming responses need to be pinned to their iterator.
-            if response.streaming:
-                self.streaming = True
+        self.send_headers(response_headers)
+        # Streaming responses need to be pinned to their iterator.
+        if response.streaming:
+            self.streaming = True
+            try:
                 if self.protocol.alive:
                     # - Consume via `__aiter__` and not `streaming_content`
                     #   directly, to allow mapping of a sync iterator.
@@ -112,12 +101,10 @@ class Stream(BaseStream):
                     async with aclosing(aiter(response)) as content:
                         async for part in content:
                             await self.send_data(part, end_stream=False)
+            finally:
                 self.end_stream()
-            else:
-                await self.send_data(response.content, end_stream=True)
-        finally:
-            # TODO does django have problems that closed in different thread?
-            response.close()   # TODO that is sync operation?
+        else:
+            await self.send_data(response.content, end_stream=True)
 
 
 class DjangoH2Protocol(BaseH2Protocol):
@@ -130,7 +117,7 @@ class DjangoH2Protocol(BaseH2Protocol):
         self.conn.local_settings.initial_window_size = (
             settings.FILE_UPLOAD_MAX_MEMORY_SIZE)
         self.conn.local_settings.acknowledge()
-        handler.connections.add(self)
+        handler.connections.add(self)  # TODO: limit max connections
         self.alive = True
 
     def connection_lost(self, exc):
@@ -146,7 +133,7 @@ class DjangoH2Protocol(BaseH2Protocol):
         self.alive = False
         # build a list to avoid "dict values changed" while iterating
         for stream in [s for s in self.streams.values() if s.streaming]:
-            stream.close()
+            stream.task.cancel()
         # this task will close connection after all streams finish
         asyncio.create_task(self.wait_shutdown())
 

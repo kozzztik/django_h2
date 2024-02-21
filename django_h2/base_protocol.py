@@ -138,11 +138,17 @@ class BaseStream:
     def __repr__(self):
         return f'{self.__class__.__name__}: {self.stream_id}'
 
+    @property
+    def writable(self):
+        return (
+            self.stream_id in self.conn.streams and
+            self.conn.streams[self.stream_id].state_machine.state not in
+                (StreamState.HALF_CLOSED_LOCAL, StreamState.CLOSED)
+        )
+
     def end_stream(self):
         """ Send end stream frame if not already sent """
-        if (self.stream_id in self.conn.streams and
-                self.conn.streams[self.stream_id].state_machine.state not in
-                (StreamState.HALF_CLOSED_LOCAL, StreamState.CLOSED)):
+        if self.writable:
             self.conn.end_stream(self.stream_id)
             self.transport.write(self.conn.data_to_send())
 
@@ -150,7 +156,11 @@ class BaseStream:
         if self._flow_control_future:
             self._flow_control_future.cancel()
             self._flow_control_future = None
-        self.end_stream()
+        if self.writable:
+            # if for some reason we came here, we failed to send response
+            # correctly. Only thing we can do - tell remote side that we failed.
+            self.conn.reset_stream(self.stream_id)
+            self.transport.write(self.conn.data_to_send())
         self.protocol.streams.pop(self.stream_id, None)
 
     async def wait_for_flow_control(self) -> int:

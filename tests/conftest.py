@@ -46,6 +46,22 @@ def post_request_signal_fixture():
         request_finished.disconnect(receiver)
 
 
+@pytest.fixture(name="request_exception_signal")
+def request_exception_signal_fixture():
+    signal_calls = []
+
+    def receiver(**kwargs):
+        signal_calls.append(kwargs)
+
+    # pylint: disable=import-outside-toplevel
+    from django_h2.signals import request_exception
+    request_exception.connect(receiver)
+    try:
+        yield signal_calls
+    finally:
+        request_exception.disconnect(receiver)
+
+
 @pytest.hookimpl(trylast=True)
 def pytest_sessionstart():
     os.environ[ENVIRONMENT_VARIABLE] = empty_settings.__name__

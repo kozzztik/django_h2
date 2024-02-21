@@ -11,7 +11,7 @@ from h2.exceptions import ProtocolError, StreamClosedError
 
 from django_h2.base_protocol import BaseH2Protocol, BaseStream
 from django_h2.gunicorn.app import DjangoGunicornApp
-from django_h2.signals import request_exception, stream_started
+from django_h2.signals import stream_started
 from tests.utils import WorkerThread, do_receive_response
 
 
@@ -40,19 +40,6 @@ def app_fixture():
     with mock.patch('sys.argv', ['path']):
         with override_settings(ROOT_URLCONF=UrlConf):
             yield DjangoGunicornApp()
-
-
-@pytest.fixture(name="request_exception_signal")
-def request_exception_signal_fixture():
-    signal_calls = []
-
-    def receiver(**kwargs):
-        signal_calls.append(kwargs)
-    request_exception.connect(receiver)
-    try:
-        yield signal_calls
-    finally:
-        request_exception.disconnect(receiver)
 
 
 def test_flow_control_global(app, server_sock):
@@ -267,7 +254,7 @@ def test_disconnect_under_flow_control(app, server_sock, post_request_signal):
     assert post_request_signal
     # flow control correctly closed
     # pylint: disable=protected-access
-    assert post_request_signal[0]['sender']._flow_control_future is None
+    assert post_request_signal[0]['request'].stream._flow_control_future is None
 
 
 @pytest.mark.parametrize('exc', (ProtocolError, StreamClosedError(1)))
@@ -363,8 +350,10 @@ def test_in_flow_too_large_body_stream_level(app, server_sock):
             sock, conn = thread.connect()
             data = sock.recv(65536 * 1024)
             data_events = conn.receive_data(data)
-            assert len(data_events) == 1
+            assert len(data_events) <= 2
             assert isinstance(data_events[0], events.RemoteSettingsChanged)
+            if len(data_events) == 2:
+                assert isinstance(data_events[1], events.SettingsAcknowledged)
             assert data_events[0].changed_settings[
                 SettingCodes.INITIAL_WINDOW_SIZE].new_value > 65535
             with override_settings(FILE_UPLOAD_MAX_MEMORY_SIZE=3):
@@ -470,8 +459,10 @@ def test_protocol_ping(server_sock, app):
         sock, conn = thread.connect()
         data = sock.recv(65536 * 1024)
         data_events = conn.receive_data(data)
-        assert len(data_events) == 1
+        assert len(data_events) <= 2
         assert isinstance(data_events[0], events.RemoteSettingsChanged)
+        if len(data_events) == 2:
+            assert isinstance(data_events[1], events.SettingsAcknowledged)
         conn.ping(b'foobar42')
         sock.sendall(conn.data_to_send())
         pong_event = None
