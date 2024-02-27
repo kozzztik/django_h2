@@ -228,3 +228,23 @@ def read_events(sock, conn, count):
                 response_headers = dict(event.headers)
         sock.sendall(conn.data_to_send())
     return response_headers, response_data
+
+
+def read_headers(sock, conn):
+    response_headers = {}
+    stream_reading = True
+    while stream_reading:
+        data = sock.recv(65536 * 1024)
+        if not data:
+            break
+        data_events = conn.receive_data(data)
+        for event in data_events:
+            if isinstance(event, h2.events.ResponseReceived):
+                response_headers = dict(event.headers)
+                stream_reading = False
+            else:
+                assert isinstance(event, (
+                    h2.events.SettingsAcknowledged,
+                    h2.events.RemoteSettingsChanged)), "Not expected event"
+        sock.sendall(conn.data_to_send())
+    return response_headers

@@ -9,7 +9,7 @@ from django.test.client import AsyncClient
 from django.core.signals import request_finished
 
 from django_h2.gunicorn.app import DjangoGunicornApp
-from django_h2.sse import SSEResponse, Event
+from django_h2.sse.response import SSEResponse, Event
 from tests.utils import WorkerThread, read_events
 
 

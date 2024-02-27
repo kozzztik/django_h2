@@ -10,7 +10,7 @@ from h2 import events
 from h2.connection import H2ConnectionStateMachine, ConnectionState
 
 from django_h2.gunicorn.app import DjangoGunicornApp
-from django_h2.sse import Event, SSEResponse
+from django_h2.sse.response import Event, SSEResponse
 from tests.utils import WorkerThread, do_receive_response, read_events
 
 
